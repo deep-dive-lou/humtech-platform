@@ -2,8 +2,10 @@ from fastapi import FastAPI, HTTPException
 from .config import settings
 from .db import init_db_pool, close_db_pool, get_pool
 from .services.jobs import claim_jobs, mark_done, mark_retry
+from .services.processor import process_job
+from .services.sender import send_pending_outbound
 
-app = FastAPI(title="HumTech Worker", version="0.1.0")
+app = FastAPI(title="HumTech Chatbot", version="0.1.0")
 
 @app.on_event("startup")
 async def _startup():
@@ -35,16 +37,26 @@ async def worker_run(limit: int = 50):
         # Process outside the claim transaction (each job can have its own tx later)
         for job in jobs:
             try:
-                # TODO: load inbound_event -> upsert contact/conversation -> insert inbound message
-                # TODO: LLM extract -> route -> adapters -> insert outbound -> mark done
                 async with conn.transaction():
+                    result = await process_job(conn, job.job_id)
                     await mark_done(conn, job.job_id)
                 processed += 1
             except Exception as e:
                 failures += 1
                 err = {"error": str(e), "job_id": job.job_id}
                 async with conn.transaction():
-                    # simple backoff: 30s; you can make this exponential later
                     await mark_retry(conn, job.job_id, delay_seconds=30, error_obj=err)
 
     return {"claimed": claimed, "processed": processed, "failures": failures, "worker_id": settings.worker_id}
+
+@app.post("/worker/send")
+async def worker_send(limit: int = 50):
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 500")
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            result = await send_pending_outbound(conn, limit=limit)
+
+    return {"ok": True, **result, "worker_id": settings.worker_id}

@@ -2,6 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 import asyncpg
+import json
 
 @dataclass
 class ClaimedJob:
@@ -45,7 +46,7 @@ SET status = 'queued',
     run_after = now() + ($2::int || ' seconds')::interval,
     locked_at = NULL,
     locked_by = NULL,
-    last_error = $3::jsonb
+    last_error = $3::text
 WHERE job_id = $1::uuid;
 """
 
@@ -57,4 +58,5 @@ async def mark_done(conn: asyncpg.Connection, job_id: str) -> None:
     await conn.execute(MARK_DONE_SQL, job_id)
 
 async def mark_retry(conn: asyncpg.Connection, job_id: str, delay_seconds: int, error_obj: dict[str, Any]) -> None:
-    await conn.execute(MARK_RETRY_SQL, job_id, delay_seconds, error_obj)
+    await conn.execute(MARK_RETRY_SQL, job_id, delay_seconds, json.dumps(error_obj, ensure_ascii=False))
+
