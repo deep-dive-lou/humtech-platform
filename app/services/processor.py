@@ -25,6 +25,7 @@ from app.services.tenants import (
     get_llm_settings,
 )
 from app.services.llm import rewrite_outbound_text_llm, classify_confirmation_intent_llm
+from app.services.trace_logger import log_processing_run, build_debug_snapshot
 
 # Offer expiry: 2 hours
 OFFER_EXPIRY_HOURS = 2
@@ -95,6 +96,7 @@ class InboundEvent:
     dedupe_key: str
     event_type: str
     payload: dict[str, Any]
+    trace_id: str
 
 
 LOAD_JOB_EVENT_SQL = """
@@ -109,7 +111,8 @@ SELECT
   ie.channel,
   ie.channel_address,
   ie.dedupe_key,
-  ie.payload
+  ie.payload,
+  COALESCE(jq.trace_id, ie.trace_id)::text AS trace_id
 FROM bot.job_queue jq
 JOIN bot.inbound_events ie ON ie.inbound_event_id = jq.inbound_event_id
 WHERE jq.job_id = $1::uuid;
@@ -149,6 +152,7 @@ RETURNING conversation_id::text;
 
 # Idempotent insert using either provider_msg_id (best) or dedupe_key (fallback).
 # We store inbound_event_id + dedupe_key into payload so we can also inspect later.
+# $12 = trace_id (propagated from inbound_event)
 INSERT_INBOUND_MESSAGE_IDEMPOTENT_SQL = """
 WITH existing AS (
   SELECT m.message_id::text AS message_id
@@ -165,7 +169,7 @@ WITH existing AS (
 ins AS (
   INSERT INTO bot.messages (
     tenant_id, conversation_id, contact_id,
-    direction, provider, provider_msg_id, channel, text, payload, created_at
+    direction, provider, provider_msg_id, channel, text, payload, created_at, trace_id
   )
   SELECT
     $1::uuid, $2::uuid, $3::uuid,
@@ -175,7 +179,8 @@ ins AS (
       'dedupe_key', $8::text,
       'event_type', $11::text
     ),
-    now()
+    now(),
+    $12::uuid
   WHERE NOT EXISTS (SELECT 1 FROM existing)
   RETURNING message_id::text AS message_id
 )
@@ -191,11 +196,11 @@ WHERE conversation_id = $1::uuid;
 INSERT_OUTBOUND_MESSAGE_SQL = """
 INSERT INTO bot.messages (
   tenant_id, conversation_id, contact_id,
-  direction, provider, channel, text, payload, created_at
+  direction, provider, channel, text, payload, created_at, trace_id
 )
 VALUES (
   $1::uuid, $2::uuid, $3::uuid,
-  'outbound', $4::text, $5::text, $6::text, $7::jsonb, now()
+  'outbound', $4::text, $5::text, $6::text, $7::jsonb, now(), $8::uuid
 )
 RETURNING message_id::text;
 """
@@ -379,16 +384,41 @@ async def _handle_new_lead(
         ev.channel,
         out_text,
         out_payload_dict,
+        ev.trace_id,  # $8 - propagate trace_id
     )
 
-    # Set lead_touchpoint in context
+    # Glass-box: debug snapshot for new_lead
+    debug_snapshot = build_debug_snapshot(
+        route="new_lead",
+        signals={},
+        slot_count=0,
+        chosen_slots=None,
+        transition={"from": "start", "to": "new_lead"},
+    )
+
+    # Set lead_touchpoint and debug snapshot in context
     lead_touchpoint = {
         "first_touch_at": now.isoformat(),
         "channel": ev.channel,
         "message_id": out_message_id,
     }
-    context_updates = {"lead_touchpoint": lead_touchpoint}
+    context_updates = {
+        "lead_touchpoint": lead_touchpoint,
+        "debug": {"last_run": debug_snapshot},
+        "_last_step": "new_lead",
+    }
     await conn.execute(UPDATE_CONVERSATION_CONTEXT_SQL, conversation_id, context_updates)
+
+    # Glass-box: structured logging for new_lead
+    log_processing_run(
+        tenant_slug=ev.tenant_id,  # Best-effort, no extra lookup
+        contact_id=contact_id,
+        conversation_id=conversation_id,
+        trace_id=ev.trace_id,
+        route="new_lead",
+        signals={},
+        state_transition={"from": "start", "to": "new_lead"},
+    )
 
     return {
         "job_id": None,  # Will be filled by caller
@@ -402,6 +432,7 @@ async def _handle_new_lead(
         "slot_matched": None,
         "booking_id": None,
         "idempotent_skip": False,
+        "trace_id": ev.trace_id,
     }
 
 
@@ -738,6 +769,8 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
     tenant_id = row["tenant_id"]
     inbound_event_id = row["inbound_event_id"]
 
+    trace_id = row["trace_id"]
+
     ev = InboundEvent(
         inbound_event_id=inbound_event_id,
         tenant_id=tenant_id,
@@ -748,7 +781,7 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
         dedupe_key=row["dedupe_key"],
         event_type=row["event_type"],
         payload=_coerce_payload(row["payload"]),
-
+        trace_id=trace_id,
     )
 
     text = _extract_text(ev.payload)
@@ -829,7 +862,7 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
     print("DEBUG route_info typeof:", type(inbound_payload.get("route_info")), inbound_payload.get("route_info"))
 
     # Pass dict directly - asyncpg codec handles JSON encoding (don't double-encode)
-    # Message (idempotent)
+    # Message (idempotent) - $12 = trace_id for glass-box tracing
     message_id = await conn.fetchval(
         INSERT_INBOUND_MESSAGE_IDEMPOTENT_SQL,
         ev.tenant_id,
@@ -843,6 +876,7 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
         inbound_payload,  # Pass dict, not json.dumps() string
         ev.inbound_event_id,
         ev.event_type,
+        ev.trace_id,  # $12 - propagate trace_id
     )
 
     await conn.execute(UPDATE_CONVERSATION_LAST_INBOUND_SQL, conversation_id)
@@ -1078,6 +1112,72 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
         ev.channel,
         final_text,  # Use final_text (rewritten or template)
         out_payload_dict,  # Pass dict directly - asyncpg codec handles JSON encoding
+        ev.trace_id,  # $8 - propagate trace_id
+    )
+
+    # Glass-box: build debug snapshot for conversation context
+    # Determine state transition
+    state_from = conv_context.get("_last_step", "start")
+    state_to = route_info.route
+    if booking_result and booking_result.get("success"):
+        state_to = "booked"
+    elif pending_booking:
+        state_to = "pending_confirmation"
+
+    debug_snapshot = build_debug_snapshot(
+        route=route_info.route,
+        signals={
+            "day": route_info.signals.day,
+            "time_window": route_info.signals.time_window,
+            "explicit_time": route_info.signals.explicit_time,
+        },
+        slot_count=len(new_last_offer["slots"]) if new_last_offer else 0,
+        chosen_slots=[
+            {"iso": s, "human": _format_slot_for_confirmation(s)}
+            for s in (new_last_offer["slots"] if new_last_offer else [])
+        ] if new_last_offer else None,
+        transition={"from": state_from, "to": state_to},
+    )
+
+    # Update conversation context with debug snapshot (overwrite-only)
+    debug_context = {"debug": {"last_run": debug_snapshot}, "_last_step": state_to}
+    await conn.execute(UPDATE_CONVERSATION_CONTEXT_SQL, conversation_id, debug_context)
+
+    # Glass-box: structured logging
+    # Load tenant_slug for logging (best-effort)
+    try:
+        tenant = await load_tenant(conn, ev.tenant_id)
+        tenant_slug = tenant.get("tenant_slug", ev.tenant_id)
+    except Exception:
+        tenant_slug = ev.tenant_id
+
+    calendar_result = None
+    if new_last_offer and new_last_offer.get("calendar_check"):
+        cc = new_last_offer["calendar_check"]
+        calendar_result = {
+            "ok": cc.get("ok"),
+            "returned_slots_count": cc.get("returned_slots_count"),
+            "provider_trace_id": cc.get("trace_id"),
+        }
+
+    log_processing_run(
+        tenant_slug=tenant_slug,
+        contact_id=contact_id,
+        conversation_id=conversation_id,
+        trace_id=ev.trace_id,
+        route=route_info.route,
+        signals={
+            "day": route_info.signals.day,
+            "time_window": route_info.signals.time_window,
+            "explicit_time": route_info.signals.explicit_time,
+        },
+        calendar_result=calendar_result,
+        offered_slots=[
+            {"iso": s, "human": _format_slot_for_confirmation(s)}
+            for s in (new_last_offer["slots"] if new_last_offer else [])
+        ] if new_last_offer else None,
+        chosen_slot={"iso": slot_matched, "human": _format_slot_for_confirmation(slot_matched)} if slot_matched else None,
+        state_transition={"from": state_from, "to": state_to},
     )
 
     return {
@@ -1091,4 +1191,5 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
         "route": route_info.route,
         "slot_matched": slot_matched,
         "booking_id": booking_result.get("booking_id") if booking_result else None,
+        "trace_id": ev.trace_id,
     }

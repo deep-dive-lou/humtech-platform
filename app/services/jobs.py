@@ -10,6 +10,7 @@ class ClaimedJob:
     tenant_id: str
     job_type: str
     inbound_event_id: str
+    trace_id: str
 
 CLAIM_JOBS_SQL = """
 WITH cte AS (
@@ -27,7 +28,8 @@ SET status = 'running',
     locked_by = $2
 FROM cte
 WHERE jq.job_id = cte.job_id
-RETURNING jq.job_id::text, jq.tenant_id::text, jq.job_type, jq.inbound_event_id::text;
+RETURNING jq.job_id::text, jq.tenant_id::text, jq.job_type, jq.inbound_event_id::text,
+          COALESCE(jq.trace_id, (SELECT ie.trace_id FROM bot.inbound_events ie WHERE ie.inbound_event_id = jq.inbound_event_id))::text AS trace_id;
 """
 
 MARK_DONE_SQL = """

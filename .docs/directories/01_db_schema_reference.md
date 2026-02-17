@@ -89,6 +89,7 @@ channel_address	text	Phone number / handle
 received_at	timestamptz	Default now()
 dedupe_key	text	Unique per tenant
 payload	jsonb	Raw inbound payload
+trace_id	uuid	Glass-box tracing ID (auto-generated, reused on retries)
 Constraints & Indexes
 
 PRIMARY KEY (inbound_event_id)
@@ -96,6 +97,8 @@ PRIMARY KEY (inbound_event_id)
 UNIQUE (tenant_id, dedupe_key)
 
 Index on received_at
+
+Index on trace_id
 
 Table: bot.job_queue
 
@@ -121,8 +124,9 @@ run_after	timestamptz	Backoff scheduling
 locked_at	timestamptz	Worker lock
 locked_by	text	Worker identifier
 last_error	text	Failure reason
-created_at	timestamptz	
-updated_at	timestamptz	
+created_at	timestamptz
+updated_at	timestamptz
+trace_id	uuid	Copied from inbound_event (glass-box tracing)
 Constraints & Indexes
 
 PRIMARY KEY (job_id)
@@ -132,6 +136,8 @@ UNIQUE (job_type, inbound_event_id)
 Composite index for job picking: (status, run_after, created_at)
 
 Index on tenant_id
+
+Index on trace_id
 
 Table: bot.contacts
 
@@ -202,7 +208,8 @@ provider_msg_id	text	External ID
 channel	text	sms, etc
 text	text	Message body
 payload	jsonb	Metadata, delivery status
-created_at	timestamptz	
+created_at	timestamptz
+trace_id	uuid	Glass-box tracing ID (propagated from inbound_event)
 Constraints & Indexes
 
 PRIMARY KEY (message_id)
@@ -213,3 +220,5 @@ Unique inbound idempotency index:
 Index on (conversation_id, created_at)
 
 Index on (provider, provider_msg_id)
+
+Index on trace_id

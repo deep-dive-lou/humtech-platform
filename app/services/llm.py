@@ -19,10 +19,8 @@ REWRITE_PROMPT = {
 
 RULES:
 1. PRESERVE all dates, times, slot numbers EXACTLY
-2. PRESERVE call-to-action phrases ("Reply 1 or 2", "Reply YES")
-3. Keep it SHORT (SMS, under 160 chars when possible)
-4. No emojis unless original has them
-5. No greetings or signatures
+2. Keep it SHORT (SMS, under 160 chars when possible)
+3. No emojis unless original has them
 
 If unsure, return original unchanged.""",
     "user": """Rewrite to sound natural. Keep ALL dates/times/numbers exact.
