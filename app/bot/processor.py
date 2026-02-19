@@ -16,16 +16,17 @@ from app.adapters.calendar.ghl import (
     pick_soonest_two_slots,
     book_slot,
 )
-from app.services.routing import route_from_text, compose_reply, route_info_to_dict
-from app.services.tenants import (
+from app.bot.routing import route_from_text, compose_reply, route_info_to_dict
+from app.bot.tenants import (
     load_tenant,
     load_tenant_credentials,
     get_calendar_settings,
     get_booking_config,
     get_llm_settings,
 )
-from app.services.llm import rewrite_outbound_text_llm, classify_confirmation_intent_llm
-from app.services.trace_logger import log_processing_run, build_debug_snapshot
+from app.bot.llm import rewrite_outbound_text_llm, classify_confirmation_intent_llm
+from app.bot.trace_logger import log_processing_run, build_debug_snapshot
+from app.engine.events import resolve_or_create_lead, write_lead_event
 
 # Offer expiry: 2 hours
 OFFER_EXPIRY_HOURS = 2
@@ -511,6 +512,58 @@ async def _detect_confirmation_intent(
     return False
 
 
+async def _emit_booking_event(
+    conn: asyncpg.Connection,
+    *,
+    tenant_id: str,
+    ev: InboundEvent,
+    contact_id: str,
+    slot_iso: str,
+    booking_id: str,
+    now: datetime,
+) -> None:
+    """Emit an appointment_booked event into the engine schema.
+
+    Best-effort: failures are logged but never block the bot response.
+    """
+    try:
+        # Resolve CRM contact ID: prefer payload, fall back to channel address
+        contact_external_id = (
+            ev.payload.get("contactId")
+            or ev.payload.get("contact_id")
+            or ev.channel_address
+        )
+        contact_provider = ev.provider
+
+        lead_id = await resolve_or_create_lead(
+            conn,
+            tenant_id=tenant_id,
+            contact_provider=contact_provider,
+            contact_external_id=contact_external_id,
+            source="inbound_sms",
+        )
+
+        await write_lead_event(
+            conn,
+            lead_id=lead_id,
+            tenant_id=tenant_id,
+            event_type="appointment_booked",
+            source="bot",
+            occurred_at=now,
+            canonical_stage="appointment_booked",
+            source_event_id=booking_id,
+            actor="bot",
+            payload={
+                "slot_start": slot_iso,
+                "booking_id": booking_id,
+                "contact_id": contact_id,
+            },
+        )
+    except Exception as exc:
+        # Engine write must never break the bot flow
+        print(f"WARN engine event failed: {exc}")
+
+
 async def _handle_offer_slots(
     conn: asyncpg.Connection,
     tenant_id: str,
@@ -927,6 +980,17 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
 
                     slot_display = _format_slot_for_confirmation(pending_slot)
                     out_text = f"Booked ✅ You're confirmed for {slot_display}. See you then!"
+
+                    # Emit engine event
+                    await _emit_booking_event(
+                        conn,
+                        tenant_id=ev.tenant_id,
+                        ev=ev,
+                        contact_id=contact_id,
+                        slot_iso=pending_slot,
+                        booking_id=booking_result["booking_id"],
+                        now=now,
+                    )
                 else:
                     out_text = "Sorry, there was an issue booking that slot. Please try again or choose another time."
 
@@ -988,6 +1052,17 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
 
                     slot_display = _format_slot_for_confirmation(slot_matched)
                     out_text = f"Booked ✅ You're confirmed for {slot_display}. See you then!"
+
+                    # Emit engine event
+                    await _emit_booking_event(
+                        conn,
+                        tenant_id=ev.tenant_id,
+                        ev=ev,
+                        contact_id=contact_id,
+                        slot_iso=slot_matched,
+                        booking_id=booking_result["booking_id"],
+                        now=now,
+                    )
                 else:
                     # Booking failed - fall back to pending flow
                     pending_booking = {

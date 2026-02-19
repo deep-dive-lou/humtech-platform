@@ -5,7 +5,7 @@ import asyncpg
 import uuid
 
 from app.adapters.messaging.ghl import send_message
-from app.services.tenants import load_tenant, get_messaging_settings
+from app.bot.tenants import load_tenant, get_messaging_settings
 
 
 # Run once to create idempotency index:

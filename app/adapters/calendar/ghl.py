@@ -356,6 +356,45 @@ def filter_by_availability_windows(
     return [iso for _, iso in filtered]
 
 
+BOOKING_STUB_ENABLED_KEY = "BOOKING_STUB"
+
+LOAD_CONTACT_SQL = """
+SELECT channel_address, metadata
+FROM bot.contacts
+WHERE contact_id = $1::uuid;
+"""
+
+LOAD_TENANT_CALENDAR_SQL = """
+SELECT settings
+FROM core.tenants
+WHERE tenant_id = $1::uuid AND is_enabled = TRUE;
+"""
+
+
+def _resolve_ghl_contact_id(
+    contact_row: dict[str, Any] | None,
+    metadata: dict[str, Any] | None,
+) -> str | None:
+    """Extract GHL contactId from contact metadata or booking metadata."""
+    # Caller-provided metadata (e.g. from event payload)
+    if metadata:
+        for key in ("contactId", "ghl_contact_id", "contact_id"):
+            val = metadata.get(key)
+            if isinstance(val, str) and val:
+                return val
+
+    # Contact record metadata
+    if contact_row:
+        cmeta = contact_row.get("metadata")
+        if isinstance(cmeta, dict):
+            for key in ("contactId", "ghl_contact_id", "contact_id"):
+                val = cmeta.get(key)
+                if isinstance(val, str) and val:
+                    return val
+
+    return None
+
+
 async def book_slot(
     tenant_id: str,
     slot_iso: str,
@@ -364,13 +403,142 @@ async def book_slot(
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    Book a slot in the calendar.
+    Book a slot via the GHL Calendar Events API.
 
-    Stub: returns success with a fake booking_id.
-    TODO: call GHL calendar API when ready.
+    POST https://services.leadconnectorhq.com/calendars/events
+
+    Falls back to stub mode when BOOKING_STUB env var is set (for testing).
+    On 401: refreshes the token once and retries.
     """
-    # Generate a fake booking ID
-    booking_id = f"stub-{uuid.uuid4().hex[:12]}"
+    import logging
+    from app.db import get_pool
+    from app.adapters.ghl.auth import get_valid_token
+
+    logger = logging.getLogger(__name__)
+
+    # Stub mode for testing
+    if os.getenv(BOOKING_STUB_ENABLED_KEY):
+        booking_id = f"stub-{uuid.uuid4().hex[:12]}"
+        return {
+            "success": True,
+            "booking_id": booking_id,
+            "slot": slot_iso,
+            "tenant_id": tenant_id,
+            "contact_id": contact_id,
+            "conversation_id": conversation_id,
+        }
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        # Load contact record for GHL contactId resolution
+        contact_row = await conn.fetchrow(LOAD_CONTACT_SQL, contact_id)
+        contact_dict = dict(contact_row) if contact_row else None
+
+        ghl_contact_id = _resolve_ghl_contact_id(contact_dict, metadata)
+        if not ghl_contact_id:
+            return {
+                "success": False,
+                "error": "no_ghl_contact_id",
+                "detail": "Could not resolve GHL contactId from contact metadata",
+            }
+
+        # Load calendar settings from tenant
+        tenant_row = await conn.fetchrow(LOAD_TENANT_CALENDAR_SQL, tenant_id)
+        if not tenant_row:
+            return {"success": False, "error": "tenant_not_found"}
+
+        raw_settings = tenant_row["settings"]
+        if isinstance(raw_settings, str):
+            raw_settings = json.loads(raw_settings)
+        settings = raw_settings if isinstance(raw_settings, dict) else {}
+        cal = settings.get("calendar") or {}
+        calendar_id = cal.get("calendar_id")
+        tz = settings.get("timezone") or cal.get("timezone") or "Europe/London"
+
+        if not calendar_id:
+            return {"success": False, "error": "missing_calendar_id"}
+
+        # Parse slot times
+        slot_dt = datetime.fromisoformat(slot_iso.replace("Z", "+00:00"))
+        if slot_dt.tzinfo is None:
+            slot_dt = slot_dt.replace(tzinfo=ZoneInfo("UTC"))
+        end_dt = slot_dt + timedelta(minutes=30)  # Default 30-min appointment
+
+        body = {
+            "calendarId": calendar_id,
+            "locationId": None,  # populated below
+            "contactId": ghl_contact_id,
+            "startTime": slot_dt.isoformat(),
+            "endTime": end_dt.isoformat(),
+            "timezone": tz,
+            "title": "Appointment (bot-booked)",
+        }
+
+        # Get valid token (handles refresh internally)
+        access_token = await get_valid_token(conn, tenant_id)
+
+        # Try to get locationId from credentials
+        cred_row = await conn.fetchval(
+            "SELECT credentials FROM core.tenant_credentials "
+            "WHERE tenant_id = $1::uuid AND provider = 'ghl'",
+            tenant_id,
+        )
+        if cred_row:
+            from app.utils.crypto import decrypt_credentials as _decrypt
+            try:
+                cred_data = _decrypt(bytes(cred_row))
+                location_id = cred_data.get("location_id")
+                if location_id:
+                    body["locationId"] = location_id
+            except Exception:
+                pass
+
+    # API call (outside DB connection — no need to hold it during HTTP)
+    url = f"{BASE_URL}/calendars/events"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+    logger.info(json.dumps({
+        "event": "ghl_book_slot_request",
+        "tenant_id": tenant_id,
+        "calendar_id": calendar_id,
+        "contact_id": ghl_contact_id,
+        "start_time": body["startTime"],
+    }))
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(url, json=body, headers=headers)
+
+        # On 401: refresh token once and retry
+        if resp.status_code == 401:
+            logger.info(json.dumps({
+                "event": "ghl_book_slot_401_retry",
+                "tenant_id": tenant_id,
+            }))
+            async with pool.acquire() as conn:
+                access_token = await get_valid_token(conn, tenant_id)
+            headers["Authorization"] = f"Bearer {access_token}"
+            resp = await client.post(url, json=body, headers=headers)
+
+    logger.info(json.dumps({
+        "event": "ghl_book_slot_response",
+        "tenant_id": tenant_id,
+        "status": resp.status_code,
+        "body": resp.text[:500],
+    }))
+
+    if resp.status_code not in (200, 201):
+        return {
+            "success": False,
+            "error": f"ghl_api_error:{resp.status_code}",
+            "detail": resp.text[:300],
+        }
+
+    data = resp.json()
+    booking_id = data.get("id") or data.get("eventId") or f"ghl-{uuid.uuid4().hex[:12]}"
 
     return {
         "success": True,
@@ -379,4 +547,5 @@ async def book_slot(
         "tenant_id": tenant_id,
         "contact_id": contact_id,
         "conversation_id": conversation_id,
+        "raw_response": data,
     }

@@ -18,9 +18,9 @@ from datetime import datetime
 
 from app.config import settings
 from app.db import init_db_pool, close_db_pool, get_pool
-from app.services.jobs import claim_jobs, mark_done, mark_retry
-from app.services.processor import process_job
-from app.services.sender import send_pending_outbound
+from app.bot.jobs import claim_jobs, mark_done, mark_retry
+from app.bot.processor import process_job
+from app.bot.sender import send_pending_outbound
 
 # Logging setup
 logging.basicConfig(
