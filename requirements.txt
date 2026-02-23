@@ -1,0 +1,8 @@
+fastapi
+asyncpg
+python-dotenv
+httpx
+cryptography
+uvicorn
+anthropic
+jinja2
