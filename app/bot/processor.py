@@ -780,6 +780,25 @@ async def _handle_offer_slots(
         timezone=timezone,
     )
 
+    # 6b) If explicit_time is given (e.g. "2:00" from "between 2-5"), use it as a
+    # floor so we only offer slots at or after that hour within the time window.
+    explicit_time_signal = getattr(signals, "explicit_time", None)
+    if explicit_time_signal and filtered:
+        floor_hour = _parse_explicit_time_to_hour(explicit_time_signal)
+        if floor_hour is not None:
+            _tz_obj = ZoneInfo(timezone)
+            _floored = []
+            for _iso in filtered:
+                try:
+                    _dt = datetime.fromisoformat(_iso.replace("Z", "+00:00"))
+                    _local = _dt.astimezone(_tz_obj)
+                    if _local.hour + _local.minute / 60 >= floor_hour:
+                        _floored.append(_iso)
+                except ValueError:
+                    continue
+            if _floored:
+                filtered = _floored
+
     # 7) Pick exactly 2 slots: A=preference match, B=contrasting or next-closest
     base_slots = filtered if filtered else slots_after_windows
     has_time_preference = bool(signals.day or signals.time_window)
