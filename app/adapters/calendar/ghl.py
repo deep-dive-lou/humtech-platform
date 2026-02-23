@@ -105,12 +105,14 @@ def filter_slots_by_signals(
     day: str | None,
     time_window: str | None,
     timezone: str = "Europe/London",
+    explicit_date: int | None = None,
 ) -> list[str]:
     """
-    Filter slots by day and time_window signals.
+    Filter slots by day, time_window, and optional explicit_date signals.
 
     day: 'monday', 'tuesday', ..., 'today', 'tomorrow'
     time_window: 'morning' (before 12), 'afternoon' (12-17), 'evening' (17+)
+    explicit_date: day-of-month integer (1-31), e.g. 6 from "Friday 6th"
 
     Slots are ISO strings in UTC (e.g., "2026-01-30T00:00:00Z").
     Filtering is done in tenant timezone, returns original ISO strings sorted chronologically.
@@ -156,6 +158,11 @@ def filter_slots_by_signals(
             elif day in day_map:
                 if slot_local.weekday() != day_map[day]:
                     continue
+
+        # Filter by specific calendar date (day-of-month), e.g. "the 6th"
+        if explicit_date is not None:
+            if slot_local.day != explicit_date:
+                continue
 
         # Filter by time window (using local hour)
         if time_window and time_window in window_ranges:
@@ -474,9 +481,8 @@ async def book_slot(
             slot_dt = slot_dt.replace(tzinfo=ZoneInfo("UTC"))
         end_dt = slot_dt + timedelta(minutes=30)  # Default 30-min appointment
 
-        body = {
+        body: dict[str, Any] = {
             "calendarId": calendar_id,
-            "locationId": None,  # populated below
             "contactId": ghl_contact_id,
             "startTime": slot_dt.isoformat(),
             "endTime": end_dt.isoformat(),
@@ -487,7 +493,8 @@ async def book_slot(
         # Get valid token (handles refresh internally)
         access_token = await get_valid_token(conn, tenant_id)
 
-        # Try to get locationId from credentials
+        # Add locationId only if stored — Private Integration tokens are location-scoped
+        # so omitting it lets GHL infer the location from the token
         cred_row = await conn.fetchval(
             "SELECT credentials FROM core.tenant_credentials "
             "WHERE tenant_id = $1::uuid AND provider = 'ghl'",

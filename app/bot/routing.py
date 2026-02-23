@@ -52,11 +52,27 @@ def _infer_time_window_from_hours(hour_start: int, hour_end: Optional[int] = Non
 TIME_REGEX = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", re.IGNORECASE)
 
 
+# Matches ordinals like "6th", "3rd", "21st"
+_ORDINAL_RE = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)\b", re.IGNORECASE)
+
+# Matches "March 6", "6 March", "6 march", etc.
+_MONTH_NAMES = (
+    r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?"
+    r"|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?"
+)
+_MONTH_DATE_RE = re.compile(
+    rf"\b(?:{_MONTH_NAMES})\s+(\d{{1,2}})\b"          # "March 6"
+    rf"|\b(\d{{1,2}})\s+(?:{_MONTH_NAMES})\b",         # "6 March"
+    re.IGNORECASE,
+)
+
+
 @dataclass
 class Signals:
     day: Optional[str] = None
     time_window: Optional[str] = None
     explicit_time: Optional[str] = None
+    explicit_date: Optional[int] = None   # day-of-month from "6th", "March 6", etc.
     raw_text: str = ""
 
 
@@ -121,12 +137,34 @@ def extract_signals(text: str) -> Signals:
         except (ValueError, IndexError):
             pass
 
+    # Extract explicit date (day-of-month) from ordinals or "Month day" patterns
+    # e.g. "Friday 6th" → explicit_date=6, "March 6" → explicit_date=6
+    month_m = _MONTH_DATE_RE.search(t)
+    if month_m:
+        # Group 1 = "Month D" form, group 2 = "D Month" form
+        day_str = month_m.group(1) or month_m.group(2)
+        try:
+            d = int(day_str)
+            if 1 <= d <= 31:
+                signals.explicit_date = d
+        except (ValueError, TypeError):
+            pass
+    else:
+        ord_m = _ORDINAL_RE.search(t)
+        if ord_m:
+            try:
+                d = int(ord_m.group(1))
+                if 1 <= d <= 31:
+                    signals.explicit_date = d
+            except (ValueError, TypeError):
+                pass
+
     return signals
 
 
 def route_from_signals(signals: Signals) -> RouteInfo:
     """Determine route based on extracted signals."""
-    has_day = signals.day is not None
+    has_day = signals.day is not None or signals.explicit_date is not None
     has_time_info = signals.time_window is not None or signals.explicit_time is not None
 
     if has_day and has_time_info:
@@ -193,5 +231,6 @@ def route_info_to_dict(route_info: RouteInfo) -> dict[str, Any]:
             "day": route_info.signals.day,
             "time_window": route_info.signals.time_window,
             "explicit_time": route_info.signals.explicit_time,
+            "explicit_date": route_info.signals.explicit_date,
         },
     }

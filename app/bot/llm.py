@@ -161,25 +161,6 @@ async def _call_llm(
         return None
 
 
-# --- Stub rewriter (for testing without API) ---
-
-STUB_SUBSTITUTIONS = [
-    (r"^I've got two options:", "Here are two options:"),
-    (r"^I've got one available option:", "Here's one available option:"),
-    (r"Reply 1 or 2 to choose\.$", "Just reply 1 or 2 to pick one."),
-    (r"Reply 1 to choose\.$", "Just reply 1 to pick it."),
-    (r"^Perfect —", "Great —"),
-    (r"Reply YES to confirm or NO to choose another\.$", "Reply YES to confirm, or NO for another option."),
-    (r"^Booked ✅", "All set! ✅"),
-    (r"See you then!$", "We'll see you then!"),
-]
-
-
-def _stub_rewrite(text: str) -> str:
-    """Deterministic stub rewriter for testing."""
-    for pattern, replacement in STUB_SUBSTITUTIONS:
-        text = re.sub(pattern, replacement, text, flags=re.MULTILINE)
-    return text
 
 
 # --- Public functions ---
@@ -205,18 +186,19 @@ async def rewrite_outbound_text_llm(
         "rewritten_at": None,
     }
 
+    if not model or model == "stub" or not llm_settings.get("enabled", False):
+        print(f"WARN rewrite_outbound_text_llm: LLM disabled or no model — skipping rewrite")
+        return result
+
     try:
-        if model == "stub":
-            rewritten = _stub_rewrite(template_text)
-        else:
-            rewritten = await _call_llm(
-                model=model,
-                system=REWRITE_PROMPT["system"],
-                user=REWRITE_PROMPT["user"].format(text=template_text),
-                temperature=temperature,
-                max_tokens=256,
-                timeout=10.0,
-            )
+        rewritten = await _call_llm(
+            model=model,
+            system=REWRITE_PROMPT["system"],
+            user=REWRITE_PROMPT["user"].format(text=template_text),
+            temperature=temperature,
+            max_tokens=256,
+            timeout=10.0,
+        )
 
         if rewritten:
             # Sanity check
@@ -266,51 +248,6 @@ Respond with JSON:
 {{"intent": "...", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": ""}}""",
 }
 
-# Stub intent patterns for testing without API key
-_STUB_SELECT_PATTERNS = re.compile(
-    r"\b(1|2|one|two|first|second|option 1|option 2)\b", re.IGNORECASE
-)
-_STUB_HUMAN_PATTERNS = re.compile(
-    r"\b(speak to|talk to|call me|human|person|someone|agent|team)\b", re.IGNORECASE
-)
-_STUB_DECLINE_PATTERNS = re.compile(
-    r"\b(not interested|no thanks|remove me|unsubscribe|stop|wrong number)\b", re.IGNORECASE
-)
-_STUB_SLOTS_PATTERNS = re.compile(
-    r"\b(different|another|other|what about|how about|any other|thursday|friday|monday|tuesday|wednesday|morning|afternoon|evening|later|earlier)\b",
-    re.IGNORECASE,
-)
-
-_STUB_REPLIES = {
-    "select_slot": "Let me get that booked for you.",
-    "request_slots": "No problem — what day and time works best for you?",
-    "wants_human": "Of course — let me get someone from the team to pick this up for you.",
-    "decline": "No problem at all, take care!",
-    "unclear": "Got it — what day and time works best for you?",
-}
-
-
-def _stub_process_message(text: str, offered_slots: list) -> dict:
-    """Pattern-based intent detection for stub/no-API-key mode."""
-    if _STUB_HUMAN_PATTERNS.search(text):
-        return {"intent": "wants_human", "slot_index": None, "should_book": False, "should_handoff": True,
-                "reply_text": _STUB_REPLIES["wants_human"]}
-    if _STUB_DECLINE_PATTERNS.search(text):
-        return {"intent": "decline", "slot_index": None, "should_book": False, "should_handoff": False,
-                "reply_text": _STUB_REPLIES["decline"]}
-    if offered_slots and _STUB_SELECT_PATTERNS.search(text):
-        # Determine which slot
-        t = text.strip().lower()
-        slot_index = 1 if any(x in t for x in ("2", "two", "second", "option 2")) else 0
-        if slot_index >= len(offered_slots):
-            slot_index = 0
-        return {"intent": "select_slot", "slot_index": slot_index, "should_book": True, "should_handoff": False,
-                "reply_text": _STUB_REPLIES["select_slot"]}
-    if _STUB_SLOTS_PATTERNS.search(text):
-        return {"intent": "request_slots", "slot_index": None, "should_book": False, "should_handoff": False,
-                "reply_text": _STUB_REPLIES["request_slots"]}
-    return {"intent": "unclear", "slot_index": None, "should_book": False, "should_handoff": False,
-            "reply_text": _STUB_REPLIES["unclear"]}
 
 
 async def process_inbound_message(
@@ -337,7 +274,7 @@ async def process_inbound_message(
     """
     import json as _json
 
-    model = llm_settings.get("model", "stub")
+    model = llm_settings.get("model", "")
     last_message = conversation_history[-1]["text"] if conversation_history else ""
 
     result = {
@@ -348,15 +285,15 @@ async def process_inbound_message(
         "preferred_day": None,
         "preferred_time": None,
         "explicit_time": None,
-        "reply_text": "Got it — what day and time works best for you?",
+        "reply_text": "",
         "used": False,
         "error": None,
     }
 
-    # Stub mode
-    if model == "stub" or not llm_settings.get("enabled", False):
-        stub = _stub_process_message(last_message, offered_slots)
-        result.update(stub)
+    # LLM disabled — bot goes silent for this turn
+    if not model or model == "stub" or not llm_settings.get("enabled", False):
+        print("WARN process_inbound_message: LLM disabled — bot silent for this turn")
+        result["error"] = "llm_disabled"
         return result
 
     # Build prompt
@@ -435,7 +372,7 @@ async def classify_confirmation_intent_llm(
 
     Returns: {has_confirmation: bool|None, used: bool, error: str|None}
     """
-    model = llm_settings.get("model", "stub")
+    model = llm_settings.get("model", "")
 
     result = {
         "has_confirmation": None,
@@ -443,8 +380,8 @@ async def classify_confirmation_intent_llm(
         "error": None,
     }
 
-    if model == "stub":
-        result["error"] = "stub_mode"
+    if not model or model == "stub" or not llm_settings.get("enabled", False):
+        result["error"] = "llm_disabled"
         return result
 
     try:

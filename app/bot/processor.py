@@ -425,6 +425,13 @@ async def _handle_new_lead(
     }
 
 
+def _ordinal(n: int) -> str:
+    """Return ordinal string for a day-of-month: 1 → '1st', 6 → '6th', 21 → '21st'."""
+    if 11 <= (n % 100) <= 13:
+        return f"{n}th"
+    return f"{n}{['th', 'st', 'nd', 'rd', 'th'][min(n % 10, 4)]}"
+
+
 def _parse_explicit_time_to_hour(explicit_time: str) -> Optional[float]:
     """Parse a time string like '4:35', '9am', '16:00' to a float hour (e.g. 16.583).
     Times < 8 with no am/pm marker are assumed pm (business context)."""
@@ -771,13 +778,14 @@ async def _handle_offer_slots(
     else:
         slots_after_windows = all_slots
 
-    # 6) Filter by extracted signals (day, time_window)
+    # 6) Filter by extracted signals (day, time_window, explicit_date)
     signals = route_info.signals
     filtered = filter_slots_by_signals(
         slots_after_windows,
         day=signals.day,
         time_window=signals.time_window,
         timezone=timezone,
+        explicit_date=getattr(signals, "explicit_date", None),
     )
 
     # 6b) If explicit_time is given (e.g. "2:00" from "between 2-5"), use it as a
@@ -834,6 +842,7 @@ async def _handle_offer_slots(
         "day": signals.day,
         "time_window": signals.time_window,
         "explicit_time": signals.explicit_time,
+        "explicit_date": getattr(signals, "explicit_date", None),
     }
 
     # 10) Format for display (in tenant local time)
@@ -1235,21 +1244,33 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
             slot_text, new_last_offer = await _handle_offer_slots(conn, ev.tenant_id, slot_route_info)
             context_updates["last_offer"] = new_last_offer
             route = "offer_slots"
-            # Check if the day preference was satisfied; if not, say so
+            # Check if the day/date preference was satisfied; if not, say so
             # Use resolved_day (which may come from pattern matcher) not just LLM preferred_day
             _check_day = preferred_day or getattr(route_info.signals, "day", None)
+            _check_date = getattr(route_info.signals, "explicit_date", None)
             preamble = ""
-            if _check_day and new_last_offer.get("offered_slots"):
+            if (_check_day or _check_date) and new_last_offer.get("offered_slots"):
                 offer_tz = new_last_offer.get("timezone", "Europe/London")
                 _tz = ZoneInfo(offer_tz)
                 slot_days = []
+                slot_dates = []
                 for _s in new_last_offer["offered_slots"]:
                     _dt = datetime.fromisoformat(_s)
                     if _dt.tzinfo is None:
                         _dt = _dt.replace(tzinfo=_tz)
+                    else:
+                        _dt = _dt.astimezone(_tz)
                     slot_days.append(_dt.strftime("%A").lower())
-                if not any(_check_day.lower() in _d for _d in slot_days):
-                    preamble = f"I don't have anything on {_check_day.capitalize()} I'm afraid —"
+                    slot_dates.append(_dt.day)
+                day_matched = (not _check_day) or any(_check_day.lower() in _d for _d in slot_days)
+                date_matched = (_check_date is None) or (_check_date in slot_dates)
+                if not day_matched or not date_matched:
+                    if _check_day and _check_date:
+                        preamble = f"I don't have anything on {_check_day.capitalize()} the {_ordinal(_check_date)} I'm afraid —"
+                    elif _check_day:
+                        preamble = f"I don't have anything on {_check_day.capitalize()} I'm afraid —"
+                    elif _check_date:
+                        preamble = f"I don't have anything on the {_ordinal(_check_date)} I'm afraid —"
             out_text = f"{preamble} {slot_text}".strip() if preamble else slot_text
 
         elif intent == "wants_human" and llm_result.get("should_handoff"):
@@ -1272,37 +1293,39 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
     if route in ("booked", "wants_human", "decline"):
         await conn.execute(CLOSE_CONVERSATION_SQL, conversation_id)
 
-    # Create pending outbound message
-    out_payload_dict: dict[str, Any] = {
-        "send_status": "pending",
-        "send_attempts": 0,
-        "send_last_error": None,
-        "route": route,
-        "text_final": out_text,
-        "llm": {
-            "enabled": llm_settings.get("enabled", False),
-            "used": llm_result.get("used", False),
-            "model": llm_settings.get("model"),
-            "error": llm_result.get("error"),
-        },
-    }
-    if new_last_offer:
-        out_payload_dict["offered_slots"] = new_last_offer.get("slots", [])
-        out_payload_dict["calendar_check"] = new_last_offer.get("calendar_check")
-    if booking_result:
-        out_payload_dict["booking_result"] = booking_result
+    # Create pending outbound message (skip if LLM disabled — bot goes silent)
+    out_message_id = None
+    if out_text:
+        out_payload_dict: dict[str, Any] = {
+            "send_status": "pending",
+            "send_attempts": 0,
+            "send_last_error": None,
+            "route": route,
+            "text_final": out_text,
+            "llm": {
+                "enabled": llm_settings.get("enabled", False),
+                "used": llm_result.get("used", False),
+                "model": llm_settings.get("model"),
+                "error": llm_result.get("error"),
+            },
+        }
+        if new_last_offer:
+            out_payload_dict["offered_slots"] = new_last_offer.get("slots", [])
+            out_payload_dict["calendar_check"] = new_last_offer.get("calendar_check")
+        if booking_result:
+            out_payload_dict["booking_result"] = booking_result
 
-    out_message_id = await conn.fetchval(
-        INSERT_OUTBOUND_MESSAGE_SQL,
-        ev.tenant_id,
-        conversation_id,
-        contact_id,
-        ev.provider,
-        ev.channel,
-        out_text,
-        out_payload_dict,  # Pass dict directly - asyncpg codec handles JSON encoding
-        ev.trace_id,  # $8 - propagate trace_id
-    )
+        out_message_id = await conn.fetchval(
+            INSERT_OUTBOUND_MESSAGE_SQL,
+            ev.tenant_id,
+            conversation_id,
+            contact_id,
+            ev.provider,
+            ev.channel,
+            out_text,
+            out_payload_dict,  # Pass dict directly - asyncpg codec handles JSON encoding
+            ev.trace_id,  # $8 - propagate trace_id
+        )
 
     # Glass-box: build debug snapshot for conversation context
     state_from = conv_context.get("_last_step", "start")
