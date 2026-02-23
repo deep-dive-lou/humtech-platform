@@ -873,10 +873,14 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
     text = _extract_text(ev.payload)
     display_name = _extract_display_name(ev.payload)
 
-    # Contact metadata must be a dict
+    # Build contact metadata — must include contactId so the messaging adapter
+    # can resolve the GHL contact when sending outbound messages.
     contact_meta = ev.payload.get("contact_metadata")
     if not isinstance(contact_meta, dict):
         contact_meta = {}
+    ghl_contact_id = ev.payload.get("contactId") or ev.payload.get("contact_id")
+    if ghl_contact_id:
+        contact_meta = {"contactId": ghl_contact_id, **contact_meta}
 
     # Contact
     contact_id = await conn.fetchval(
