@@ -10,11 +10,13 @@ from .bot.sender import send_pending_outbound
 from .bot.tenants import load_tenant_debug
 from .engine.webhooks import router as engine_webhooks_router
 from .outreach.routes import router as outreach_router
+from .bot.webhook import router as bot_webhook_router
 
 app = FastAPI(title="HumTech Platform", version="0.2.0")
 load_dotenv()
 app.include_router(engine_webhooks_router)
 app.include_router(outreach_router)
+app.include_router(bot_webhook_router)
 
 @app.on_event("startup")
 async def _startup():
