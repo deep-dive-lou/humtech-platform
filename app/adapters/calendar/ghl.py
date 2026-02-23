@@ -504,7 +504,7 @@ async def book_slot(
                 pass
 
     # API call (outside DB connection — no need to hold it during HTTP)
-    url = f"{BASE_URL}/calendars/events"
+    url = f"{BASE_URL}/calendars/events/appointments"
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
