@@ -190,7 +190,7 @@ async def rewrite_outbound_text_llm(
 
 PROCESS_MESSAGE_PROMPT = {
     "system": """You are a booking assistant{context_part}. Your only goal is to get the lead booked in for a call.
-{slots_section}
+{persona_section}{slots_section}
 Reply with JSON only — no explanation, no markdown.
 
 Intent options:
@@ -271,6 +271,7 @@ async def process_inbound_message(
     display_slots: list[str],
     tenant_context: str,
     llm_settings: dict,
+    persona: str = "",
 ) -> dict:
     """
     Classify intent and compose a reply for an inbound message.
@@ -281,6 +282,7 @@ async def process_inbound_message(
         display_slots: Human-readable versions of offered_slots.
         tenant_context: Brief business description for the system prompt.
         llm_settings: LLM config dict from get_llm_settings().
+        persona: Optional persona/tone instructions injected into the system prompt.
 
     Returns:
         {intent, slot_index, should_book, should_handoff, reply_text, used, error}
@@ -311,6 +313,7 @@ async def process_inbound_message(
 
     # Build prompt
     context_part = f" for {tenant_context}" if tenant_context else ""
+    persona_section = f"\n{persona}\n" if persona else ""
 
     if display_slots:
         slots_lines = "\n".join(f"  {i + 1}) {s}" for i, s in enumerate(display_slots))
@@ -327,6 +330,7 @@ async def process_inbound_message(
 
     system = PROCESS_MESSAGE_PROMPT["system"].format(
         context_part=context_part,
+        persona_section=persona_section,
         slots_section=slots_section,
     )
     user = PROCESS_MESSAGE_PROMPT["user"].format(

@@ -1011,6 +1011,7 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
             display_slots=display_slots,
             tenant_context=bot_settings["context"],
             llm_settings=llm_settings,
+            persona=bot_settings.get("persona", ""),
         )
 
         intent = llm_result["intent"]

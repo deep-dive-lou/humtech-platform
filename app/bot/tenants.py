@@ -218,6 +218,7 @@ def get_bot_settings(tenant: dict[str, Any]) -> dict[str, Any]:
     return {
         "first_touch_template": bot.get("first_touch_template"),
         "context": bot.get("context", ""),
+        "persona": bot.get("persona", ""),
         "reengagement_enabled": bool(reengagement.get("enabled", True)),
         "reengagement_delay_hours": int(reengagement.get("delay_hours", 6)),
         "reengagement_max_attempts": int(reengagement.get("max_attempts", 2)),
