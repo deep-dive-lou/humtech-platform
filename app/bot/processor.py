@@ -181,6 +181,21 @@ DO UPDATE SET
 RETURNING conversation_id::text;
 """
 
+FIND_OPEN_CONVERSATION_SQL = """
+SELECT conversation_id::text
+FROM bot.conversations
+WHERE tenant_id = $1::uuid
+  AND contact_id = $2::uuid
+  AND status = 'open'
+LIMIT 1;
+"""
+
+CLOSE_CONVERSATION_SQL = """
+UPDATE bot.conversations
+SET status = 'closed', updated_at = now()
+WHERE conversation_id = $1::uuid;
+"""
+
 # Idempotent insert using either provider_msg_id (best) or dedupe_key (fallback).
 # We store inbound_event_id + dedupe_key into payload so we can also inspect later.
 # $12 = trace_id (propagated from inbound_event)
@@ -874,30 +889,50 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
     )
 
 
-    # Conversation (open)
-    conversation_id = await conn.fetchval(
-        UPSERT_OPEN_CONVERSATION_SQL,
-        ev.tenant_id, contact_id,
-    )
-
-    # Load conversation context
-    context_row = await conn.fetchval(LOAD_CONVERSATION_CONTEXT_SQL, conversation_id)
-    conv_context = _coerce_payload(context_row)
-
-    # Load tenant settings (needed for both new_lead and inbound message flows)
+    # Load tenant settings (needed for both flows)
     try:
         tenant = await load_tenant(conn, ev.tenant_id)
     except Exception as e:
         tenant = {}
         print(f"WARN: Failed to load tenant {ev.tenant_id}: {e}")
 
-    # Handle new_lead event separately (no inbound message, just first-touch outbound)
     if ev.event_type == "new_lead":
+        # new_lead: upsert conversation (creates it if this is the first touch)
+        conversation_id = await conn.fetchval(
+            UPSERT_OPEN_CONVERSATION_SQL,
+            ev.tenant_id, contact_id,
+        )
+        context_row = await conn.fetchval(LOAD_CONVERSATION_CONTEXT_SQL, conversation_id)
+        conv_context = _coerce_payload(context_row)
         result = await _handle_new_lead(
             conn, ev, contact_id, conversation_id, conv_context, display_name, tenant
         )
         result["job_id"] = job_id
         return result
+
+    # inbound_message: only process if an open bot conversation already exists
+    conversation_id = await conn.fetchval(
+        FIND_OPEN_CONVERSATION_SQL,
+        ev.tenant_id, contact_id,
+    )
+    if not conversation_id:
+        return {
+            "job_id": job_id,
+            "tenant_id": ev.tenant_id,
+            "inbound_event_id": ev.inbound_event_id,
+            "contact_id": contact_id,
+            "conversation_id": None,
+            "message_id": None,
+            "out_message_id": None,
+            "route": "no_active_conversation",
+            "slot_matched": None,
+            "booking_id": None,
+            "trace_id": ev.trace_id,
+        }
+
+    # Load conversation context
+    context_row = await conn.fetchval(LOAD_CONVERSATION_CONTEXT_SQL, conversation_id)
+    conv_context = _coerce_payload(context_row)
 
     # Route the inbound message (for signal extraction + payload metadata)
     route_info = route_from_text(text)
@@ -1188,6 +1223,10 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
     # Store context updates if any
     if context_updates:
         await conn.execute(UPDATE_CONVERSATION_CONTEXT_SQL, conversation_id, context_updates)
+
+    # Close conversation on terminal outcomes
+    if route in ("booked", "wants_human", "decline"):
+        await conn.execute(CLOSE_CONVERSATION_SQL, conversation_id)
 
     # Create pending outbound message
     out_payload_dict: dict[str, Any] = {
