@@ -47,6 +47,74 @@ Reply "yes" or "no":""",
 
 # --- Core LLM caller ---
 
+_CLAUDE_FALLBACK_MODEL = "claude-sonnet-4-6"
+_OVERLOAD_STATUS_CODES = {529, 503, 529}
+_MAX_RETRIES = 2
+_RETRY_DELAY_SECONDS = 1.5
+
+
+async def _call_anthropic(
+    model: str,
+    system: str,
+    user: str,
+    temperature: float,
+    max_tokens: int,
+    timeout: float,
+) -> Optional[str]:
+    """
+    Call Anthropic API with retry on overload (529/503) and fallback to sonnet.
+    Returns response text or None on failure.
+    """
+    import asyncio
+    import httpx
+
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return None
+
+    models_to_try = [model]
+    if model != _CLAUDE_FALLBACK_MODEL:
+        models_to_try.append(_CLAUDE_FALLBACK_MODEL)
+
+    for attempt_model in models_to_try:
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    resp = await client.post(
+                        "https://api.anthropic.com/v1/messages",
+                        headers={
+                            "x-api-key": api_key,
+                            "anthropic-version": "2023-06-01",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": attempt_model,
+                            "system": system,
+                            "messages": [{"role": "user", "content": user}],
+                            "temperature": temperature,
+                            "max_tokens": max_tokens,
+                        },
+                    )
+                    if resp.status_code in _OVERLOAD_STATUS_CODES and attempt < _MAX_RETRIES:
+                        print(f"LLM overloaded ({attempt_model}, attempt {attempt + 1}): {resp.status_code} — retrying")
+                        await asyncio.sleep(_RETRY_DELAY_SECONDS)
+                        continue
+                    resp.raise_for_status()
+                    return resp.json()["content"][0]["text"].strip()
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code in _OVERLOAD_STATUS_CODES and attempt < _MAX_RETRIES:
+                    print(f"LLM overloaded ({attempt_model}, attempt {attempt + 1}): {e.response.status_code} — retrying")
+                    await asyncio.sleep(_RETRY_DELAY_SECONDS)
+                    continue
+                print(f"LLM call failed ({attempt_model}): {e}")
+                break  # Non-retryable HTTP error — try fallback model
+            except Exception as e:
+                print(f"LLM call failed ({attempt_model}): {e}")
+                break  # Non-retryable error — try fallback model
+
+    return None
+
+
 async def _call_llm(
     model: str,
     system: str,
@@ -84,28 +152,7 @@ async def _call_llm(
                 return resp.json()["choices"][0]["message"]["content"].strip()
 
         elif model.startswith("claude-"):
-            api_key = os.getenv("ANTHROPIC_API_KEY")
-            if not api_key:
-                return None
-
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={
-                        "x-api-key": api_key,
-                        "anthropic-version": "2023-06-01",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": model,
-                        "system": system,
-                        "messages": [{"role": "user", "content": user}],
-                        "temperature": temperature,
-                        "max_tokens": max_tokens,
-                    },
-                )
-                resp.raise_for_status()
-                return resp.json()["content"][0]["text"].strip()
+            return await _call_anthropic(model, system, user, temperature, max_tokens, timeout)
 
         return None  # Unknown model
 
