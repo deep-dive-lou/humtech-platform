@@ -242,8 +242,8 @@ Reply with JSON only — no explanation, no markdown.
 
 Intent options:
 - "select_slot": lead is choosing one of the currently offered slots. Use when they reference a slot by day, time, or position (e.g. "Wednesday works", "8am one", "the first", "that one"). slot_index=0 for first slot, 1 for second.
-- "request_specific_time": lead is asking for a SPECIFIC time (e.g. "do you have 4:35?", "can I do Tuesday at 3pm?", "what about 9:30 on Friday?"). Use preferred_day + explicit_time to capture exactly what they asked for.
-- "request_slots": lead wants to see broad availability without naming an exact time (e.g. "anything Wednesday?", "got anything in the afternoon?", "different day?").
+- "request_specific_time": lead is asking for a SINGLE exact time (e.g. "do you have 4:35?", "can I do Tuesday at 3pm?", "what about 9:30 on Friday?"). Use preferred_day + explicit_time. Do NOT use for time ranges like "between 2-5" or "sometime this afternoon".
+- "request_slots": lead gives broad availability — a day, time of day, or time range (e.g. "anything Wednesday?", "got anything in the afternoon?", "I can do Tuesday afternoon between 2-5", "between 2 and 5", "different day?"). Use preferred_day + preferred_time.
 - "wants_human": lead wants to speak to a person or has a complex question
 - "decline": lead is not interested
 - "unclear": anything else → compose a clarifying reply

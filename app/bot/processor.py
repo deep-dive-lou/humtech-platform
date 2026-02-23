@@ -338,8 +338,9 @@ async def _handle_new_lead(
     offer_tz = first_touch_offer.get("timezone", "Europe/London")
     display_slots = format_slots_for_display(offered_slots, timezone=offer_tz) if offered_slots else []
 
-    # Build first-touch message
-    name_part = f" {display_name}" if display_name else ""
+    # Build first-touch message (use first name only)
+    first_name = display_name.split()[0] if display_name else ""
+    name_part = f" {first_name}" if first_name else ""
     out_text = _build_first_touch_text(
         display_slots=display_slots,
         name_part=name_part,
@@ -1174,8 +1175,19 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
                         out_text = f"I'm afraid I don't have {explicit_time} available. What other times work for you?"
                     route = "offer_slots"
             else:
-                # Couldn't parse time or no slots — fall back to broad offer
-                out_text, new_last_offer = await _handle_offer_slots(conn, ev.tenant_id, _NullRouteInfo())
+                # Couldn't parse time or no slots — fall back to broad offer, preserving day preference
+                _fallback_day = llm_result.get("preferred_day")
+                if _fallback_day:
+                    class _FallbackSignals:
+                        day = _fallback_day
+                        time_window = None
+                        explicit_time = None
+                    class _FallbackRouteInfo:
+                        route = "offer_slots"
+                        signals = _FallbackSignals()
+                    out_text, new_last_offer = await _handle_offer_slots(conn, ev.tenant_id, _FallbackRouteInfo())
+                else:
+                    out_text, new_last_offer = await _handle_offer_slots(conn, ev.tenant_id, _NullRouteInfo())
                 context_updates["last_offer"] = new_last_offer
                 route = "offer_slots"
 
