@@ -67,16 +67,37 @@ class RouteInfo:
     signals: Signals
 
 
+_NEGATION_RE = re.compile(
+    r"\b(can't|cannot|doesn't|don't|wont|won't|not|no|never|doesnt|"
+    r"doesn't work|can't do|won't work|wont work|doesn't suit|not available)\b",
+    re.IGNORECASE,
+)
+
+
 def extract_signals(text: str) -> Signals:
     """Extract day, time_window, and explicit time from text."""
     t = (text or "").lower().strip()
     signals = Signals(raw_text=text or "")
 
-    # Extract day
+    # Extract day — collect all matches, skip negated ones
+    # e.g. "Tuesday doesn't work, how about Friday?" → picks Friday, not Tuesday
+    day_matches: list[tuple[str, int]] = []  # (day_name, position)
     for pattern, day_name in DAY_PATTERNS.items():
-        if re.search(pattern, t):
-            signals.day = day_name
-            break
+        for m in re.finditer(pattern, t, re.IGNORECASE):
+            day_matches.append((day_name, m.start()))
+
+    affirmative: list[tuple[str, int]] = []
+    for day_name, pos in day_matches:
+        window = t[max(0, pos - 50): pos]
+        if not _NEGATION_RE.search(window):
+            affirmative.append((day_name, pos))
+
+    if affirmative:
+        # Pick earliest affirmative day mention
+        signals.day = min(affirmative, key=lambda x: x[1])[0]
+    elif day_matches:
+        # All mentions are negated — pick the last one (probably what they're pivoting to)
+        signals.day = max(day_matches, key=lambda x: x[1])[0]
 
     # Extract time window (explicit keywords first)
     for pattern, window in TIME_WINDOW_PATTERNS.items():

@@ -241,17 +241,18 @@ PROCESS_MESSAGE_PROMPT = {
 Reply with JSON only — no explanation, no markdown.
 
 Intent options:
-- "select_slot": lead is choosing one of the currently offered slots. Use when they reference a slot by day, time, or position (e.g. "Wednesday works", "8am one", "the first", "that one", "1.15 is great", "13:15"). Match by time if mentioned — slot_index=0 for first offered slot, 1 for second. If they say a time like "1.15" or "13:15", find which offered slot has that time and use its index.
+- "select_slot": lead is accepting one of the currently offered slots. Use when they reference an offered slot by position or by a day/time that matches one of the offered slots (e.g. "the first", "that one", "1.15 is great", "13:15"). Match by time if mentioned — slot_index=0 for first offered slot, 1 for second. If they say a time like "1.15" or "13:15", find which offered slot has that time and use its index. Do NOT use if they mention a day or time that does not match any of the currently offered slots.
 - "request_specific_time": lead is asking for a SINGLE exact time (e.g. "do you have 4:35?", "can I do Tuesday at 3pm?", "what about 9:30 on Friday?"). Use preferred_day + explicit_time. Do NOT use for time ranges like "between 2-5" or "sometime this afternoon".
-- "request_slots": lead gives broad availability — a day, time of day, or time range (e.g. "anything Wednesday?", "got anything in the afternoon?", "I can do Tuesday afternoon between 2-5", "between 2 and 5", "different day?"). Use preferred_day + preferred_time.
+- "request_slots": lead gives broad availability — a day, time of day, or time range (e.g. "anything Wednesday?", "got anything in the afternoon?", "I can do Tuesday afternoon between 2-5", "between 2 and 5", "different day?", "what about Friday?"). Also use this when they propose a day that was NOT in the offered slots. Use preferred_day + preferred_time.
 - "wants_human": lead wants to speak to a person or has a complex question
 - "decline": lead is not interested
 - "unclear": anything else → compose a clarifying reply
 
 Rules:
-- If offered slots are active and lead references one of them → always "select_slot"
+- If offered slots are active and lead accepts or references a matching offered slot → "select_slot"
+- If lead mentions a DIFFERENT day or time not in the current offered slots → "request_slots" or "request_specific_time"
 - slot_index is 0, 1, or null
-- preferred_day: the day they want (e.g. "wednesday"), or null. For negated days ("can't do Monday") → NOT that day.
+- preferred_day: the day they ARE requesting, or null. Ignore rejected/negated days — if they say "Tuesday doesn't work, how about Friday?" → preferred_day is "friday". If they say "not Monday, what about Wednesday?" → preferred_day is "wednesday".
 - explicit_time: for request_specific_time only — the exact time they asked for as a string (e.g. "4:35", "9:30", "15:00"). Use 24h if obvious, otherwise as stated.
 - preferred_time: for request_slots only — "morning", "afternoon", "evening", or null
 - reply_text: for select_slot/wants_human/decline/unclear → full reply. For request_specific_time and request_slots → leave as empty string "" — the system will compose the slot response.
