@@ -1211,14 +1211,21 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
                 route = "offer_slots"
 
         elif intent == "request_slots":
-            # Broad availability request — offer 1 morning + 1 afternoon for the requested day/time
+            # Broad availability request — offer slots for the requested day/time
             preferred_day = llm_result.get("preferred_day")
             preferred_time = llm_result.get("preferred_time")
-            if preferred_day or preferred_time:
+            # Inherit time_window and explicit_time from pattern matcher when LLM didn't extract them
+            _pm_sig = route_info.signals
+            _pm_time_window = getattr(_pm_sig, "time_window", None)
+            _pm_explicit_time = getattr(_pm_sig, "explicit_time", None)
+            if preferred_day or preferred_time or _pm_time_window or _pm_explicit_time:
+                _resolved_day = preferred_day or getattr(_pm_sig, "day", None)
+                _resolved_time_window = preferred_time or _pm_time_window
+                _resolved_explicit_time = _pm_explicit_time
                 class _LLMSignals:
-                    day = preferred_day
-                    time_window = preferred_time
-                    explicit_time = None
+                    day = _resolved_day
+                    time_window = _resolved_time_window
+                    explicit_time = _resolved_explicit_time
                 class _LLMRouteInfo:
                     route = "offer_slots"
                     signals = _LLMSignals()
@@ -1229,8 +1236,10 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
             context_updates["last_offer"] = new_last_offer
             route = "offer_slots"
             # Check if the day preference was satisfied; if not, say so
+            # Use resolved_day (which may come from pattern matcher) not just LLM preferred_day
+            _check_day = preferred_day or getattr(route_info.signals, "day", None)
             preamble = ""
-            if preferred_day and new_last_offer.get("offered_slots"):
+            if _check_day and new_last_offer.get("offered_slots"):
                 offer_tz = new_last_offer.get("timezone", "Europe/London")
                 _tz = ZoneInfo(offer_tz)
                 slot_days = []
@@ -1239,8 +1248,8 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
                     if _dt.tzinfo is None:
                         _dt = _dt.replace(tzinfo=_tz)
                     slot_days.append(_dt.strftime("%A").lower())
-                if not any(preferred_day.lower() in _d for _d in slot_days):
-                    preamble = f"I don't have anything on {preferred_day.capitalize()} I'm afraid —"
+                if not any(_check_day.lower() in _d for _d in slot_days):
+                    preamble = f"I don't have anything on {_check_day.capitalize()} I'm afraid —"
             out_text = f"{preamble} {slot_text}".strip() if preamble else slot_text
 
         elif intent == "wants_human" and llm_result.get("should_handoff"):
