@@ -59,6 +59,7 @@ async def get_free_slots(
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Accept": "application/json",
+        "Version": "2021-07-28",
     }
 
     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -508,6 +509,7 @@ async def book_slot(
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
         "Accept": "application/json",
+        "Version": "2021-07-28",
     }
 
     logger.info(json.dumps({

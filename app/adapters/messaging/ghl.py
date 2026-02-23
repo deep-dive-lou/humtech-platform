@@ -124,6 +124,7 @@ async def send_message(
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
         "Accept": "application/json",
+        "Version": "2021-07-28",
     }
 
     url = f"{BASE_URL}/conversations/messages"
