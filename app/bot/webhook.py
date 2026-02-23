@@ -123,26 +123,48 @@ async def inbound_webhook(tenant_slug: str, request: Request) -> Response:
         tenant_id = row["tenant_id"]
 
         # 2. Extract fields from GHL payload
-        event_type    = body.get("event_type") or "inbound_message"
-        channel       = body.get("channel") or "sms"
-        provider_msg_id = body.get("messageId") or body.get("message_id") or body.get("provider_msg_id")
-        channel_address = _extract_channel_address(body)
-        text          = body.get("text") or body.get("message") or body.get("body") or ""
-        display_name  = body.get("display_name") or body.get("name") or ""
+        # GHL Custom Data fields arrive in body.customData — strip whitespace from keys
+        # (GHL can insert trailing tabs/spaces into field names)
+        raw_custom = body.get("customData") or body.get("custom_data") or {}
+        custom_data: dict[str, Any] = {k.strip(): v for k, v in raw_custom.items()}
 
-        # Merge display_name and contactId into payload so processor can read them
+        event_type = (
+            body.get("event_type")          # direct (simulate / non-GHL)
+            or custom_data.get("event_type")  # GHL Custom Data field
+            or "inbound_message"
+        )
+        channel = body.get("channel") or custom_data.get("channel") or "sms"
+        provider_msg_id = (
+            body.get("messageId") or custom_data.get("messageId")
+            or body.get("message_id") or body.get("provider_msg_id")
+        )
+        channel_address = _extract_channel_address(body)
+        text = body.get("text") or body.get("message") or body.get("body") or ""
+
+        # display_name: prefer customData, fall back to GHL standard fields
+        display_name = (
+            custom_data.get("display_name")
+            or body.get("display_name")
+            or body.get("full_name")
+            or body.get("name")
+            or ""
+        )
+
+        # contactId: GHL sends it in customData AND as contact_id at root
+        ghl_contact_id = (
+            custom_data.get("contactId")
+            or custom_data.get("contact_id")
+            or body.get("contactId")
+            or body.get("contact_id")
+        )
+
+        # Build enriched payload for processor
         enriched_payload = dict(body)
-        if display_name:
-            enriched_payload["display_name"] = display_name
-        # Ensure contact_metadata contains contactId (needed by messaging adapter)
-        contact_meta = body.get("contact_metadata")
-        if not isinstance(contact_meta, dict):
-            contact_meta = {}
-        # Also accept top-level contactId for convenience
-        if not contact_meta.get("contactId") and body.get("contactId"):
-            contact_meta["contactId"] = body["contactId"]
-        enriched_payload["contact_metadata"] = contact_meta
+        enriched_payload["event_type"] = event_type
+        enriched_payload["display_name"] = display_name
         enriched_payload["text"] = text
+        if ghl_contact_id:
+            enriched_payload["contactId"] = ghl_contact_id
 
         dedupe = _dedupe_key(tenant_slug, "ghl", provider_msg_id, channel, channel_address, text)
 
