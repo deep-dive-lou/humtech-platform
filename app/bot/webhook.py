@@ -139,7 +139,13 @@ async def inbound_webhook(tenant_slug: str, request: Request) -> Response:
             or body.get("message_id") or body.get("provider_msg_id")
         )
         channel_address = _extract_channel_address(body)
-        text = body.get("text") or body.get("message") or body.get("body") or ""
+        text = (
+            body.get("text")
+            or custom_data.get("text")         # GHL Custom Data field
+            or body.get("message")
+            or body.get("body")
+            or ""
+        )
 
         # display_name: prefer customData, fall back to GHL standard fields
         display_name = (
