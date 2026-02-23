@@ -1077,7 +1077,7 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
         route = intent
         out_text = llm_result["reply_text"]
 
-        if intent == "select_slot" and llm_result.get("should_book") and llm_result.get("slot_index") is not None:
+        if intent == "select_slot" and llm_result.get("slot_index") is not None:
             slot_index = llm_result["slot_index"]
             if 0 <= slot_index < len(offered_slots):
                 slot_iso = offered_slots[slot_index]
