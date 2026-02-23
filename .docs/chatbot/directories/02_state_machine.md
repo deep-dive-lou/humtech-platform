@@ -1,48 +1,38 @@
-# Conversation State Machine (v1)
+# Conversation Flow (v2 — LLM-driven)
 
 State is stored ONLY in `bot.conversations.context` (jsonb).
 There is no other memory.
 
-This system is deterministic.
-LLMs may interpret language, but code controls state transitions.
+The flow is LLM-driven from first reply onwards.
+LLM classifies intent AND composes the outbound reply.
+Code handles booking execution and context writes.
 
 ---
 
 ## Core Context Keys
 
-Only these keys may exist in `context`:
+| Key | Purpose |
+|---|---|
+| `lead_touchpoint` | Records first-touch time, channel, message_id |
+| `last_offer` | The slots currently offered (ISO timestamps + display + calendar_check) |
+| `booked_booking` | Final confirmed booking — immutable once set |
+| `handoff_requested` | Set when LLM returns wants_human intent |
+| `declined` | Set when LLM returns decline intent |
+| `debug` | Last run debug snapshot (route, signals, slots, transition) |
+| `_last_step` | Last route label for state_transition logging |
 
-- preference
-- last_offer
-- pending_booking
-- booked_booking
-- lead_touchpoint
-
-If a key is not listed here, it must not be created.
+`pending_booking` is no longer used — booking is immediate when intent is clear.
 
 ---
 
-## Context Shapes (v1)
+## Context Shapes
 
-### preference
-Latest user constraints.
-
+### last_offer
 ```json
 {
-  "day": "friday",
-  "time_window": "morning",
-  "explicit_time": null,
-  "free_text": "Friday morning",
-  "updated_at": "ISO"
-}
-last_offer
-Last calendar offer made to the user.
-
-json
-Copy code
-{
   "slots": ["ISO", "ISO"],
-  "constraints": { "day": "friday", "time_window": "morning", "explicit_time": null },
+  "offered_slots": ["ISO", "ISO"],
+  "constraints": { "day": null, "time_window": null, "explicit_time": null },
   "timezone": "Europe/London",
   "offered_at": "ISO",
   "calendar_check": {
@@ -51,144 +41,91 @@ Copy code
     "returned_slots_count": 350,
     "filtered_slots_count": 38,
     "checked_range": { "start": "ISO", "end": "ISO" },
-    "reason": null
+    "reason": null,
+    "checked_at": "ISO"
   }
 }
-Offer expiry: 2 hours
+```
 
-pending_booking
-Slot selected but not yet confirmed.
+Offer expiry: 2 hours. Expired slots are not sent to LLM as active options.
 
-json
-Copy code
-{
-  "slot": "ISO",
-  "created_at": "ISO"
-}
-Expires after 2 hours.
-
-booked_booking
-Final confirmed booking.
-
-json
-Copy code
+### booked_booking
+```json
 {
   "slot": "ISO",
   "booking_id": "string",
   "booked_at": "ISO"
 }
+```
 Once set, booking is immutable.
 
-lead_touchpoint
-Tracks first-touch SLA for new leads.
-
-json
-Copy code
+### lead_touchpoint
+```json
 {
   "first_touch_at": "ISO",
   "channel": "sms",
   "message_id": "uuid"
 }
-Entrypoints
-inbound_message
-Triggered by incoming user message.
+```
 
-Goal: progress toward booking with minimal back-and-forth.
+---
 
-new_lead
-Triggered by form / website interaction.
+## Processing Order
 
-Hard rule:
+### new_lead
+1. Check idempotency (lead_touchpoint already set → skip)
+2. Fetch 2 calendar slots (no day/time signals — just soonest two)
+3. Build first-touch message with slots using `_build_first_touch_text()`
+   - Respects `tenant.settings.bot.first_touch_template` if configured
+   - Placeholders: `{name_part}`, `{slot_1}`, `{slot_2}`
+4. Store `last_offer` in context so LLM knows what was offered when lead replies
+5. Send message
 
-First outbound message must be sent within 60 seconds
+### inbound_message
+1. **Booked idempotency** — if `booked_booking` exists, reply with confirmation only. No further action.
+2. **LLM processes message** (`process_inbound_message()` in `llm.py`)
+   - Input: conversation history (last 20 messages), offered_slots (if any, if not expired), tenant_context
+   - Output: `{intent, slot_index, should_book, should_handoff, preferred_day, preferred_time, explicit_time, reply_text}`
+   - For `request_specific_time` and `request_slots`, LLM returns `reply_text=""` — system composes the slot response
+3. **Handle intent**:
+   - `select_slot + should_book=true` → book immediately via GHL API → reply "Booked ✅ ..."
+   - `request_specific_time` → parse `explicit_time` → find nearest calendar slot within 45-min tolerance → if found: book immediately; if not found: offer 2 nearest alternatives
+   - `request_slots` → fetch fresh slots via `_handle_offer_slots()` with `preferred_day`/`preferred_time` signals → reply with new offer (prepended with preamble if day unavailable)
+   - `wants_human + should_handoff=true` → note in context, reply as LLM composed
+   - `decline` → note in context, reply as LLM composed
+   - `unclear` → reply as LLM composed (clarifying question)
+4. Write context updates (booked_booking, last_offer, handoff_requested, declined)
+5. Insert outbound message row (send_status=pending)
 
-Goal:
+---
 
-Prompt for scheduling intent (not booking confirmation)
+## Slot Offering Rules (unchanged)
+- Always check calendar first
+- Offer exactly 2 slots when possible (soonest + contrasting)
+- `_handle_offer_slots()` handles filtering by day/time signals and availability windows
+- `calendar_check` always written to `last_offer` for observability
 
-Processing Order (Strict)
-Inbound messages are processed in this order:
+---
 
-1. Booked idempotency
-If user references a slot already in booked_booking → respond with confirmation only.
+## LLM Config (per tenant)
 
-No further action.
+`tenant.settings.llm`:
+```json
+{
+  "enabled": true,
+  "model": "claude-haiku-4-5-20251001",
+  "temperature": 0.0
+}
+```
 
-2. Pending booking resolution
-If pending_booking exists:
+`tenant.settings.bot`:
+```json
+{
+  "context": "HumTech, a revenue acceleration consultancy",
+  "first_touch_template": "Hey{name_part} — ...",
+  "reengagement": { "enabled": true, "delay_hours": 6, "max_attempts": 2 },
+  "handoff_ghl_user_id": "abc123"
+}
+```
 
-Interpret message as one of:
-
-CONFIRM
-
-DECLINE
-
-CHANGE_REQUEST
-
-UNCLEAR
-
-Rules:
-
-CHANGE_REQUEST overrides all others.
-
-Actions:
-
-CONFIRM → book slot → set booked_booking, clear pending_booking + last_offer
-
-DECLINE → clear pending_booking, re-offer slots
-
-CHANGE_REQUEST → clear pending_booking, update preference, generate new offer
-
-UNCLEAR → short clarification (one question max)
-
-3. Slot selection from last_offer
-If last_offer exists and is not expired:
-
-Try to match user text to a slot (ordinal, time, or explicit)
-
-If matched → create pending_booking
-
-If change-of-mind detected → update preference, regenerate offer
-
-Else → re-display 2 options
-
-4. Normal routing
-If no active offer or pending booking:
-
-Extract constraints into preference
-
-If enough info → check calendar and generate offer
-
-Else → ask one clarifying question
-
-Slot Offering Rules (Hard)
-When generating offers:
-
-Always check calendar first
-
-Offer exactly 2 slots when possible
-
-Prefer:
-
-Closest matching slot
-
-Contrasting slot (morning vs afternoon) or next-closest
-
-Never ask unnecessary follow-up questions if calendar data exists.
-
-Change-of-Mind Rule (Global)
-At any time, if user expresses new constraints:
-
-Update preference
-
-Clear pending_booking
-
-Regenerate offer closest to new preference
-
-Diagnostics Requirement
-Every calendar check must write calendar_check into last_offer.
-
-This enables full debugging via DB inspection only.
-
-markdown
-Copy code
+If `llm.enabled = false` or `model = "stub"`, pattern-based stub mode is used (no API call).

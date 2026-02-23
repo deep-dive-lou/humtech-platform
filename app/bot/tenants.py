@@ -196,6 +196,35 @@ def get_booking_config(tenant: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def get_bot_settings(tenant: dict[str, Any]) -> dict[str, Any]:
+    """
+    Extract bot behaviour settings from tenant.
+
+    Tenant settings.bot structure:
+        {
+            "first_touch_template": "Hey{name_part}...",  # optional, uses default if absent
+            "context": "HumTech, a revenue acceleration consultancy",  # injected into LLM prompt
+            "reengagement": {
+                "enabled": true,
+                "delay_hours": 6,
+                "max_attempts": 2
+            },
+            "handoff_ghl_user_id": "abc123"  # GHL user to assign conversation to on handoff
+        }
+    """
+    settings = tenant.get("settings") or {}
+    bot = settings.get("bot") or {}
+    reengagement = bot.get("reengagement") or {}
+    return {
+        "first_touch_template": bot.get("first_touch_template"),
+        "context": bot.get("context", ""),
+        "reengagement_enabled": bool(reengagement.get("enabled", True)),
+        "reengagement_delay_hours": int(reengagement.get("delay_hours", 6)),
+        "reengagement_max_attempts": int(reengagement.get("max_attempts", 2)),
+        "handoff_ghl_user_id": bot.get("handoff_ghl_user_id"),
+    }
+
+
 def get_llm_settings(tenant: dict[str, Any]) -> dict[str, Any]:
     """
     Extract LLM rewriting settings from tenant.

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import re
 from datetime import date
 from typing import Any, Optional
 
@@ -50,7 +52,6 @@ async def source_leads(limit: int = 150) -> list[dict[str, Any]]:
         return []
 
     payload = {
-        "api_key": settings.apollo_api_key,
         "person_titles": APOLLO_TITLES,
         "person_seniorities": APOLLO_SENIORITIES,
         "contact_email_status_v2": ["verified", "likely to engage"],
@@ -65,7 +66,7 @@ async def source_leads(limit: int = 150) -> list[dict[str, Any]]:
             resp = await client.post(
                 "https://api.apollo.io/api/v1/mixed_people/search",
                 json=payload,
-                headers={"Content-Type": "application/json"},
+                headers={"Content-Type": "application/json", "X-Api-Key": settings.apollo_api_key},
             )
             resp.raise_for_status()
             data = resp.json()
@@ -97,45 +98,128 @@ def _parse_apollo_person(person: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Enrichment — Proxycurl
+# Enrichment — Hiring signals (Apify LinkedIn Jobs, batch per pipeline run)
 # ---------------------------------------------------------------------------
 
-async def _enrich_linkedin(linkedin_url: str) -> dict[str, Any]:
-    """Pull LinkedIn profile via Proxycurl."""
-    if not settings.proxycurl_api_key or not linkedin_url:
-        return {}
+# Apify actor: worldunboxer/rapid-linkedin-scraper (free, high success rate)
+_APIFY_ACTOR_ID = "JkfTWxtpgfvcRQn3p"
+_HIRING_SEARCH_TERMS = ["Head of Sales", "Sales Director", "Commercial Director"]
+_APIFY_POLL_INTERVAL = 15   # seconds between status checks
+_APIFY_TIMEOUT = 480        # 8 minutes max wait per search term
+
+
+def _normalise_company(name: str) -> str:
+    """Lowercase and strip legal suffixes for fuzzy company matching."""
+    if not name:
+        return ""
+    name = name.lower()
+    name = re.sub(r"\b(ltd|limited|plc|inc|llc|group|holdings?|uk)\b", "", name)
+    name = re.sub(r"[^a-z0-9]", " ", name)
+    return " ".join(name.split())
+
+
+async def _run_apify_job_search(term: str) -> list[dict[str, Any]]:
+    """Run one Apify LinkedIn Jobs search and return results."""
+    if not settings.apify_api_key:
+        return []
+
+    async with httpx.AsyncClient(timeout=20) as client:
+        try:
+            resp = await client.post(
+                f"https://api.apify.com/v2/acts/{_APIFY_ACTOR_ID}/runs",
+                params={"token": settings.apify_api_key, "memory": 256},
+                json={"searchKeyword": term, "location": "United Kingdom", "limit": 100},
+            )
+            resp.raise_for_status()
+            run_id = resp.json()["data"]["id"]
+            dataset_id = resp.json()["data"]["defaultDatasetId"]
+        except Exception as e:
+            logger.warning("Apify: failed to start run for '%s': %s", term, e)
+            return []
+
+    # Poll for completion
+    deadline = asyncio.get_event_loop().time() + _APIFY_TIMEOUT
+    async with httpx.AsyncClient(timeout=10) as client:
+        while asyncio.get_event_loop().time() < deadline:
+            await asyncio.sleep(_APIFY_POLL_INTERVAL)
+            try:
+                status_resp = await client.get(
+                    f"https://api.apify.com/v2/acts/{_APIFY_ACTOR_ID}/runs/{run_id}",
+                    params={"token": settings.apify_api_key},
+                )
+                status = status_resp.json()["data"]["status"]
+                if status == "SUCCEEDED":
+                    break
+                if status in ("FAILED", "ABORTED", "TIMED-OUT"):
+                    logger.warning("Apify: run %s ended with status %s", run_id, status)
+                    return []
+            except Exception as e:
+                logger.warning("Apify: poll error for run %s: %s", run_id, e)
+                return []
+        else:
+            logger.warning("Apify: run %s timed out after %ds", run_id, _APIFY_TIMEOUT)
+            return []
+
+    # Fetch results
     async with httpx.AsyncClient(timeout=15) as client:
         try:
-            resp = await client.get(
-                "https://nubela.co/proxycurl/api/v2/linkedin",
-                headers={"Authorization": f"Bearer {settings.proxycurl_api_key}"},
-                params={"url": linkedin_url, "activities": "include"},
+            items_resp = await client.get(
+                f"https://api.apify.com/v2/datasets/{dataset_id}/items",
+                params={"token": settings.apify_api_key, "limit": 100},
             )
-            if resp.status_code == 200:
-                return resp.json()
-            logger.warning("Proxycurl %s for %s", resp.status_code, linkedin_url)
+            return items_resp.json() if items_resp.status_code == 200 else []
         except Exception as e:
-            logger.warning("Proxycurl failed for %s: %s", linkedin_url, e)
-    return {}
+            logger.warning("Apify: failed to fetch dataset %s: %s", dataset_id, e)
+            return []
 
 
-def _parse_linkedin_signals(profile: dict[str, Any]) -> dict[str, Any]:
-    """Extract actionable signals from a Proxycurl profile."""
-    if not profile:
+async def fetch_hiring_companies() -> dict[str, dict[str, str]]:
+    """
+    Batch-fetch UK companies currently hiring for sales roles via Apify.
+    Runs once per pipeline invocation, in parallel with Apollo sourcing.
+    Returns: {normalised_company_name: {"role": str, "job_url": str}}
+    """
+    if not settings.apify_api_key:
+        logger.info("Apify key not set — skipping hiring signal")
         return {}
 
-    signals: dict[str, Any] = {}
+    results = await asyncio.gather(
+        *[_run_apify_job_search(term) for term in _HIRING_SEARCH_TERMS],
+        return_exceptions=True,
+    )
 
-    # Recent activity / posts
-    activities = profile.get("activities") or []
-    if activities:
-        latest = activities[0]
-        signals["content"] = {
-            "recent_post_summary": latest.get("title", "")[:150],
-            "source_url": latest.get("link", ""),
+    hiring: dict[str, dict[str, str]] = {}
+    for term, jobs in zip(_HIRING_SEARCH_TERMS, results):
+        if isinstance(jobs, Exception):
+            logger.warning("Apify: search '%s' failed: %s", term, jobs)
+            continue
+        for job in jobs:
+            company = _normalise_company(job.get("company_name", ""))
+            if company and company not in hiring:
+                hiring[company] = {
+                    "role": job.get("job_title", term),
+                    "job_url": job.get("job_url", ""),
+                }
+
+    logger.info("Apify: found %d companies hiring for sales roles", len(hiring))
+    return hiring
+
+
+def _check_hiring_signal(
+    company: str, hiring_companies: dict[str, dict[str, str]]
+) -> dict[str, Any]:
+    """Check if this lead's company appears in the batch hiring lookup."""
+    key = _normalise_company(company)
+    if not key or key not in hiring_companies:
+        return {}
+    match = hiring_companies[key]
+    return {
+        "hiring": {
+            "role": match["role"],
+            "job_url": match["job_url"],
+            "signal": f"Actively hiring for {match['role']} in the UK",
         }
-
-    return signals
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +290,13 @@ async def _generate_personalisation(
     """Run Claude personalisation engine. Returns structured output dict."""
     client = AsyncAnthropic(api_key=settings.anthropic_api_key)
 
-    prompt = f"""You are writing a personalised opening line for a cold email on behalf of HumTech.
+    prompt = f"""You are writing the personalised opening block for a cold email on behalf of HumTech.
+
+The email template is:
+  "I saw that [COMPANY] just [SPECIFIC CONTEMPORARY DETAIL].
+   This is [COMPLIMENT], and it [SPECIFIC IMPLICATION FOR THEIR REVENUE/SALES]."
+
+Your job: fill in the two bracketed parts to produce two natural sentences that slot into this template.
 
 HumTech context: {TEMPLATE_CONTEXT}
 
@@ -222,18 +312,23 @@ Available signals (use ONLY what is here — never invent):
 
 Rung system (choose highest achievable):
 - Rung 5: Specific + evidence-backed (cite real signal with source_url)
-- Rung 4: Specific but light (category observation with some basis)
+- Rung 4: Specific but lighter (category observation with some basis)
 - Rung 3: Industry-specific pattern (no personal claim about this company)
 - Rung 2: Role-based empathy (title-based, non-assumptive)
-- Rung 1: Human neutral (no signals available)
+- Rung 1: Human neutral (no signals at all)
 
-UK tone: calm, direct, not salesy. Max 22 words for opener_first_line.
-Do not repeat the HumTech offer — the template body does that.
+Signal → template guidance:
+- hiring signal → "I saw that [Company] just started recruiting a [role]." / "This is a clear sign of growth ambition, and it usually means [relevant revenue/conversion implication]."
+- website growth_language → "I saw that [Company] just [past-tense action from website, e.g. 'launched a new growth push' or 'expanded into new markets']." / "This is ambitious, and it [implication about where systems or AI could help]."
+- website has_booking_flow → reference to conversion/booking infrastructure investment
+- No strong signals → use industry-level rung 3 observation, do not fabricate a specific detail
+
+UK tone: calm, direct, not salesy. Do NOT mention HumTech — the template body handles that.
 
 Return ONLY valid JSON:
 {{
-  "opener_first_line": "string (max 22 words)",
-  "micro_insight": "string or null",
+  "opener_first_line": "string — two sentences. Default format: 'I saw that [Company] just [specific contemporary detail]. This is [brief compliment], and it [specific implication for their revenue or sales].' — deviate only if you have a compelling reason and the result is more natural; always stay calm, direct, evidence-backed.",
+  "micro_insight": "string or null — internal note on the angle chosen",
   "angle_tag": "speed_to_lead|cac_leak|attribution_gap|sales_ops|conversion_rate",
   "confidence_score": 0.0,
   "evidence_used": [{{"signal_key": "string", "source_url": "string"}}],
@@ -245,10 +340,14 @@ Truth rules — non-negotiable:
 1. Only reference signals present in the signals JSON above.
 2. Every specific claim needs a source_url in evidence_used.
 3. If you reference something without evidence, add "hallucination_risk" to risk_flags.
-4. Frame inferences as observations ("usually means", "suggests") not facts."""
+4. Frame inferences as observations ("usually means", "suggests") not facts.
+5. Never invent a contemporary detail — if no strong signal exists, use rung 3 or lower."""
 
     fallback = {
-        "opener_first_line": f"Came across {lead.get('company', 'your company')} and wanted to reach out.",
+        "opener_first_line": (
+            f"I saw that {lead.get('company', 'your company')} just started expanding its commercial operation. "
+            f"This is a strong signal of growth ambition, and it usually surfaces questions about converting that momentum into revenue efficiently."
+        ),
         "micro_insight": None,
         "angle_tag": "sales_ops",
         "confidence_score": 0.3,
@@ -295,7 +394,11 @@ async def run_pipeline(batch_date: Optional[date] = None) -> dict[str, Any]:
         "errors": 0,
     }
 
-    prospects = await source_leads(limit=150)
+    # Run Apollo sourcing and Apify hiring fetch concurrently
+    prospects, hiring_companies = await asyncio.gather(
+        source_leads(limit=150),
+        fetch_hiring_companies(),
+    )
     stats["sourced"] = len(prospects)
 
     if not prospects:
@@ -334,9 +437,8 @@ async def run_pipeline(batch_date: Optional[date] = None) -> dict[str, Any]:
         # --- Enrichment (outside transaction — slow network calls) ---
         signals: dict[str, Any] = {}
 
-        li_profile = await _enrich_linkedin(lead.get("linkedin_url", ""))
-        li_signals = _parse_linkedin_signals(li_profile)
-        signals.update(li_signals)
+        hiring_signal = _check_hiring_signal(lead.get("company", ""), hiring_companies)
+        signals.update(hiring_signal)
 
         if domain:
             website_signals = await _analyse_website(domain)

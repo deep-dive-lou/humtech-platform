@@ -5,7 +5,6 @@ from typing import Any, Dict, Tuple, Optional
 import asyncpg
 import json
 import os
-import re
 
 from app.config import settings  # ensures dotenv is loaded
 from app.adapters.calendar.ghl import (
@@ -16,38 +15,69 @@ from app.adapters.calendar.ghl import (
     pick_soonest_two_slots,
     book_slot,
 )
-from app.bot.routing import route_from_text, compose_reply, route_info_to_dict
+from app.bot.routing import route_from_text, route_info_to_dict
 from app.bot.tenants import (
     load_tenant,
     load_tenant_credentials,
     get_calendar_settings,
     get_booking_config,
     get_llm_settings,
+    get_bot_settings,
 )
-from app.bot.llm import rewrite_outbound_text_llm, classify_confirmation_intent_llm
+from app.bot.llm import process_inbound_message
 from app.bot.trace_logger import log_processing_run, build_debug_snapshot
 from app.engine.events import resolve_or_create_lead, write_lead_event
 
 # Offer expiry: 2 hours
 OFFER_EXPIRY_HOURS = 2
 
-# First-touch message template (no LLM, deterministic)
-FIRST_TOUCH_TEMPLATE = (
-    "Hey{name_part} — thanks for reaching out. "
-    "Want to get you booked in quickly. "
-    "What day suits you best, and is morning or afternoon better?"
-)
 
-# YES/NO detection patterns
-YES_PATTERNS = {"yes", "yep", "yeah", "yup", "sure", "confirm", "ok", "okay", "y", "affirmative", "absolutely", "definitely"}
-NO_PATTERNS = {"no", "nope", "nah", "cancel", "n", "negative", "different", "another", "change"}
+class _NullSignals:
+    """Null signals for first-touch slot fetching (no day/time preference yet)."""
+    day = None
+    time_window = None
+    explicit_time = None
 
-# Confirmation phrases for auto-confirm during slot selection
-CONFIRM_PHRASES = {
-    "book it", "book me", "perfect", "great", "sounds good",
-    "let's do", "i'll take", "that works", "that's great", "please book",
-    "go ahead", "lock it in", "that one", "i want"
-}
+
+class _NullRouteInfo:
+    """Minimal route_info stub for first-touch slot fetching."""
+    route = "offer_slots"
+    signals = _NullSignals()
+
+
+def _build_first_touch_text(
+    display_slots: list,
+    name_part: str,
+    template: Optional[str] = None,
+) -> str:
+    """Build first-touch greeting with offered slots."""
+    if template:
+        slot_1 = display_slots[0] if len(display_slots) > 0 else ""
+        slot_2 = display_slots[1] if len(display_slots) > 1 else ""
+        try:
+            return template.format(name_part=name_part, slot_1=slot_1, slot_2=slot_2)
+        except (KeyError, IndexError):
+            pass  # Fall through to default
+
+    if len(display_slots) >= 2:
+        return (
+            f"Hey{name_part} — thanks for reaching out. "
+            f"Want to get you booked in quickly. "
+            f"I've got {display_slots[0]} or {display_slots[1]} free — which works best for you?"
+        )
+    elif len(display_slots) == 1:
+        return (
+            f"Hey{name_part} — thanks for reaching out. "
+            f"Want to get you booked in quickly. "
+            f"I've got {display_slots[0]} free — does that work for you?"
+        )
+    else:
+        return (
+            f"Hey{name_part} — thanks for reaching out. "
+            f"Want to get you booked in quickly. "
+            f"What day and time works best for you?"
+        )
+
 
 def _coerce_payload(payload_raw) -> dict:
     if payload_raw is None:
@@ -216,6 +246,14 @@ LOAD_CONVERSATION_CONTEXT_SQL = """
 SELECT context FROM bot.conversations WHERE conversation_id = $1::uuid;
 """
 
+LOAD_RECENT_MESSAGES_SQL = """
+SELECT direction, text
+FROM bot.messages
+WHERE conversation_id = $1::uuid
+ORDER BY created_at ASC
+LIMIT 20;
+"""
+
 
 def _extract_text(payload: dict[str, Any]) -> str:
     """
@@ -243,88 +281,6 @@ def _extract_display_name(payload: dict[str, Any]) -> Optional[str]:
     return None
 
 
-# Ordinal patterns: "first", "1st", "the first one", "2nd", "second", etc.
-ORDINAL_PATTERNS = [
-    (r"\b(1st|first|one)\b", 0),
-    (r"\b(2nd|second|two)\b", 1),
-    (r"\b(3rd|third|three)\b", 2),
-    (r"\b(4th|fourth|four)\b", 3),
-    (r"\b(5th|fifth|five)\b", 4),
-    (r"\b(6th|sixth|six)\b", 5),
-]
-
-# Time patterns: "9:15", "09:15", "915", "9.15", "9am", "9:15am"
-TIME_PATTERN = re.compile(
-    r"\b(\d{1,2})[:.]?(\d{2})?\s*(am|pm)?\b",
-    re.IGNORECASE,
-)
-
-
-def _match_slot_by_ordinal(text: str, slots: list[str]) -> Optional[str]:
-    """Match user text to slot by ordinal reference."""
-    t = text.lower().strip()
-    for pattern, index in ORDINAL_PATTERNS:
-        if re.search(pattern, t) and index < len(slots):
-            return slots[index]
-    return None
-
-
-def _match_slot_by_time(text: str, slots: list[str]) -> Optional[str]:
-    """Match user text to slot by time reference."""
-    t = text.lower().strip()
-    match = TIME_PATTERN.search(t)
-    if not match:
-        return None
-
-    hour = int(match.group(1))
-    minutes = int(match.group(2)) if match.group(2) else 0
-    ampm = (match.group(3) or "").lower()
-
-    # Convert to 24-hour if am/pm specified
-    if ampm == "pm" and hour < 12:
-        hour += 12
-    elif ampm == "am" and hour == 12:
-        hour = 0
-
-    # Find matching slot
-    for slot_iso in slots:
-        slot_dt = datetime.fromisoformat(slot_iso)
-        if slot_dt.hour == hour and slot_dt.minute == minutes:
-            return slot_iso
-
-    return None
-
-
-def _match_slot_by_digit(text: str, slots: list[str]) -> Optional[str]:
-    """Match exact '1' or '2' input to slot index."""
-    t = text.strip()
-    if t == "1" and len(slots) >= 1:
-        return slots[0]
-    if t == "2" and len(slots) >= 2:
-        return slots[1]
-    return None
-
-
-def _match_slot_from_text(text: str, slots: list[str]) -> Optional[str]:
-    """Try to match user text to one of the offered slots."""
-    # Try exact digit first ("1", "2")
-    matched = _match_slot_by_digit(text, slots)
-    if matched:
-        return matched
-
-    # Try ordinal ("the first one", "2nd")
-    matched = _match_slot_by_ordinal(text, slots)
-    if matched:
-        return matched
-
-    # Try time match ("9:15", "9am")
-    matched = _match_slot_by_time(text, slots)
-    if matched:
-        return matched
-
-    return None
-
-
 async def _handle_new_lead(
     conn: asyncpg.Connection,
     ev: InboundEvent,
@@ -332,20 +288,21 @@ async def _handle_new_lead(
     conversation_id: str,
     conv_context: dict[str, Any],
     display_name: Optional[str],
+    tenant: dict[str, Any],
 ) -> dict[str, Any]:
     """
-    Handle new_lead event: send first-touch message, set lead_touchpoint.
+    Handle new_lead event: fetch 2 slots immediately, send first-touch message.
     Idempotent: if lead_touchpoint already exists, do nothing.
     """
     from zoneinfo import ZoneInfo
 
+    bot_settings = get_bot_settings(tenant)
     tz = ZoneInfo("Europe/London")
     now = datetime.now(tz)
 
     # Idempotency: if lead_touchpoint already exists, skip
     existing_touchpoint = conv_context.get("lead_touchpoint")
     if existing_touchpoint and isinstance(existing_touchpoint, dict):
-        # Already processed - return existing data
         return {
             "job_id": None,  # Will be filled by caller
             "tenant_id": ev.tenant_id,
@@ -360,9 +317,19 @@ async def _handle_new_lead(
             "idempotent_skip": True,
         }
 
-    # Build first-touch message (no LLM)
+    # Fetch 2 slots for first-touch (no signals — just pick soonest two)
+    _, first_touch_offer = await _handle_offer_slots(conn, ev.tenant_id, _NullRouteInfo())
+    offered_slots = first_touch_offer.get("offered_slots", [])
+    offer_tz = first_touch_offer.get("timezone", "Europe/London")
+    display_slots = format_slots_for_display(offered_slots, timezone=offer_tz) if offered_slots else []
+
+    # Build first-touch message
     name_part = f" {display_name}" if display_name else ""
-    out_text = FIRST_TOUCH_TEMPLATE.format(name_part=name_part)
+    out_text = _build_first_touch_text(
+        display_slots=display_slots,
+        name_part=name_part,
+        template=bot_settings.get("first_touch_template"),
+    )
 
     # Create outbound message
     out_payload_dict: dict[str, Any] = {
@@ -370,9 +337,10 @@ async def _handle_new_lead(
         "send_attempts": 0,
         "send_last_error": None,
         "route": "new_lead",
-        "text_template": out_text,
         "text_final": out_text,
         "event_type": "new_lead",
+        "offered_slots": offered_slots,
+        "calendar_check": first_touch_offer.get("calendar_check"),
         "llm": {"enabled": False, "used": False},
     }
 
@@ -385,19 +353,22 @@ async def _handle_new_lead(
         ev.channel,
         out_text,
         out_payload_dict,
-        ev.trace_id,  # $8 - propagate trace_id
+        ev.trace_id,
     )
 
     # Glass-box: debug snapshot for new_lead
     debug_snapshot = build_debug_snapshot(
         route="new_lead",
         signals={},
-        slot_count=0,
-        chosen_slots=None,
+        slot_count=len(offered_slots),
+        chosen_slots=[
+            {"iso": s, "human": _format_slot_for_confirmation(s)}
+            for s in offered_slots
+        ] if offered_slots else None,
         transition={"from": "start", "to": "new_lead"},
     )
 
-    # Set lead_touchpoint and debug snapshot in context
+    # Set lead_touchpoint, last_offer, and debug snapshot in context
     lead_touchpoint = {
         "first_touch_at": now.isoformat(),
         "channel": ev.channel,
@@ -405,6 +376,7 @@ async def _handle_new_lead(
     }
     context_updates = {
         "lead_touchpoint": lead_touchpoint,
+        "last_offer": first_touch_offer if offered_slots else None,
         "debug": {"last_run": debug_snapshot},
         "_last_step": "new_lead",
     }
@@ -412,7 +384,7 @@ async def _handle_new_lead(
 
     # Glass-box: structured logging for new_lead
     log_processing_run(
-        tenant_slug=ev.tenant_id,  # Best-effort, no extra lookup
+        tenant_slug=tenant.get("tenant_slug", ev.tenant_id),
         contact_id=contact_id,
         conversation_id=conversation_id,
         trace_id=ev.trace_id,
@@ -435,6 +407,101 @@ async def _handle_new_lead(
         "idempotent_skip": False,
         "trace_id": ev.trace_id,
     }
+
+
+def _parse_explicit_time_to_hour(explicit_time: str) -> Optional[float]:
+    """Parse a time string like '4:35', '9am', '16:00' to a float hour (e.g. 16.583).
+    Times < 8 with no am/pm marker are assumed pm (business context)."""
+    try:
+        raw = str(explicit_time).lower().strip()
+        is_pm = "pm" in raw
+        is_am = "am" in raw
+        t = raw.replace("am", "").replace("pm", "").strip()
+        parts = t.split(":")
+        h = int(parts[0])
+        m = int(parts[1]) if len(parts) > 1 else 0
+        if is_pm and h != 12:
+            h += 12
+        elif not is_am and not is_pm and h < 8:
+            h += 12  # "4:35" without am/pm in business context → 16:35
+        return h + m / 60
+    except (ValueError, IndexError):
+        return None
+
+
+def _find_nearest_slot(
+    slots: list[str],
+    preferred_day: Optional[str],
+    target_hour: float,
+    timezone: str,
+    tolerance_minutes: int = 45,
+) -> Optional[str]:
+    """Find the slot closest to target_hour on preferred_day within tolerance."""
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo(timezone)
+    utc = ZoneInfo("UTC")
+    day_map = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+               "friday": 4, "saturday": 5, "sunday": 6}
+
+    best_slot: Optional[str] = None
+    best_diff = float("inf")
+
+    for slot_iso in slots:
+        try:
+            slot_dt = datetime.fromisoformat(slot_iso.replace("Z", "+00:00"))
+            if slot_dt.tzinfo is None:
+                slot_dt = slot_dt.replace(tzinfo=utc)
+            local_dt = slot_dt.astimezone(tz)
+        except ValueError:
+            continue
+
+        if preferred_day and preferred_day.lower() in day_map:
+            if local_dt.weekday() != day_map[preferred_day.lower()]:
+                continue
+
+        slot_hour = local_dt.hour + local_dt.minute / 60
+        diff = abs(slot_hour - target_hour)
+        if diff < best_diff:
+            best_diff = diff
+            best_slot = slot_iso
+
+    if best_slot and best_diff <= tolerance_minutes / 60:
+        return best_slot
+    return None
+
+
+def _find_two_nearest_slots(
+    slots: list[str],
+    preferred_day: Optional[str],
+    target_hour: float,
+    timezone: str,
+) -> list[str]:
+    """Find the 2 slots nearest to target_hour (no tolerance limit, best effort)."""
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo(timezone)
+    utc = ZoneInfo("UTC")
+    day_map = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+               "friday": 4, "saturday": 5, "sunday": 6}
+
+    candidates: list[tuple[float, datetime, str]] = []
+    for slot_iso in slots:
+        try:
+            slot_dt = datetime.fromisoformat(slot_iso.replace("Z", "+00:00"))
+            if slot_dt.tzinfo is None:
+                slot_dt = slot_dt.replace(tzinfo=utc)
+            local_dt = slot_dt.astimezone(tz)
+        except ValueError:
+            continue
+        if preferred_day and preferred_day.lower() in day_map:
+            if local_dt.weekday() != day_map[preferred_day.lower()]:
+                continue
+        slot_hour = local_dt.hour + local_dt.minute / 60
+        candidates.append((abs(slot_hour - target_hour), slot_dt, slot_iso))
+
+    candidates.sort(key=lambda x: x[0])
+    result = [iso for _, _, iso in candidates[:2]]
+    result.sort(key=lambda iso: datetime.fromisoformat(iso.replace("Z", "+00:00")))
+    return result
 
 
 def _is_offer_expired(offered_at: str, timezone: str = "Europe/London") -> bool:
@@ -462,54 +529,6 @@ def _format_slot_for_confirmation(slot_iso: str, timezone: str = "Europe/London"
     if slot_dt.tzinfo is None:
         slot_dt = slot_dt.replace(tzinfo=tz)
     return slot_dt.strftime("%A %H:%M")
-
-
-def _detect_yes_no(text: str) -> str | None:
-    """Detect YES or NO from user text. Returns 'yes', 'no', or None."""
-    t = text.lower().strip()
-    # Remove punctuation for matching
-    t_clean = re.sub(r"[^\w\s]", "", t)
-    words = set(t_clean.split())
-
-    # Check for explicit yes/no
-    if words & YES_PATTERNS:
-        return "yes"
-    if words & NO_PATTERNS:
-        return "no"
-    return None
-
-
-async def _detect_confirmation_intent(
-    text: str,
-    llm_settings: Optional[dict[str, Any]] = None,
-) -> bool:
-    """
-    Detect if text contains confirmation intent for auto-confirm during slot selection.
-    Returns True if user expressed confirmation alongside their slot choice.
-
-    Uses pattern matching first (fast path), then LLM fallback if enabled.
-    """
-    t = text.lower().strip()
-    t_clean = re.sub(r"[^\w\s]", "", t)
-    words = set(t_clean.split())
-
-    # Fast path: pattern matching
-    # Check for YES patterns (e.g., "yes the first one")
-    if words & YES_PATTERNS:
-        return True
-
-    # Check for confirmation phrases (e.g., "book me for 9:15", "perfect, option 2")
-    for phrase in CONFIRM_PHRASES:
-        if phrase in t_clean:
-            return True
-
-    # LLM fallback (if enabled and pattern matching found nothing)
-    if llm_settings and llm_settings.get("enabled"):
-        llm_result = await classify_confirmation_intent_llm(text, llm_settings)
-        if llm_result.get("has_confirmation") is True:
-            return True
-
-    return False
 
 
 async def _emit_booking_event(
@@ -568,6 +587,7 @@ async def _handle_offer_slots(
     conn: asyncpg.Connection,
     tenant_id: str,
     route_info: Any,
+    target_hour: Optional[float] = None,
 ) -> Tuple[str, Dict[str, Any]]:
     """
     Fetch slots (tenant-configured), filter by signals + availability windows,
@@ -746,10 +766,13 @@ async def _handle_offer_slots(
 
     # 7) Pick exactly 2 slots: A=preference match, B=contrasting or next-closest
     base_slots = filtered if filtered else slots_after_windows
+    has_time_preference = bool(signals.day or signals.time_window)
     offered_slots = pick_soonest_two_slots(
         base_slots,
         timezone=timezone,
-        contrast_pool=slots_after_windows,  # broader pool for finding contrast
+        # When user has a specific preference, stay within that window (don't contrast back to morning)
+        contrast_pool=base_slots if has_time_preference else slots_after_windows,
+        target_hour=target_hour,
     )
 
     # 8) Build calendar_check metadata (observability)
@@ -784,16 +807,11 @@ async def _handle_offer_slots(
     # 11) Compose message
     if len(display_slots) == 2:
         out_text = (
-            f"I've got two options:\n"
-            f"1) {display_slots[0]}\n"
-            f"2) {display_slots[1]}\n"
-            f"Reply 1 or 2 to choose."
+            f"I've got {display_slots[0]} or {display_slots[1]} free — which works best for you?"
         )
     elif len(display_slots) == 1:
         out_text = (
-            f"I've got one available option:\n"
-            f"1) {display_slots[0]}\n"
-            f"Reply 1 to choose."
+            f"I've got {display_slots[0]} free — does that work for you?"
         )
     else:
         out_text = (
@@ -866,20 +884,22 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
     context_row = await conn.fetchval(LOAD_CONVERSATION_CONTEXT_SQL, conversation_id)
     conv_context = _coerce_payload(context_row)
 
+    # Load tenant settings (needed for both new_lead and inbound message flows)
+    try:
+        tenant = await load_tenant(conn, ev.tenant_id)
+    except Exception as e:
+        tenant = {}
+        print(f"WARN: Failed to load tenant {ev.tenant_id}: {e}")
+
     # Handle new_lead event separately (no inbound message, just first-touch outbound)
     if ev.event_type == "new_lead":
         result = await _handle_new_lead(
-            conn, ev, contact_id, conversation_id, conv_context, display_name
+            conn, ev, contact_id, conversation_id, conv_context, display_name, tenant
         )
         result["job_id"] = job_id
         return result
 
-    # Check for existing booking (idempotency)
-    booked_booking = conv_context.get("booked_booking")
-    existing_pending = conv_context.get("pending_booking")
-    last_offer = conv_context.get("last_offer")
-
-    # Route the inbound message (always needed for payload)
+    # Route the inbound message (for signal extraction + payload metadata)
     route_info = route_from_text(text)
     route_info_dict = route_info_to_dict(route_info)
 
@@ -939,242 +959,252 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
     tz = ZoneInfo("Europe/London")
     now = datetime.now(tz)
 
+    route = "unclear"
     new_last_offer = None
     context_updates: dict[str, Any] = {}
-    out_text: str
-    pending_booking = None
-    slot_matched = None
     booking_result = None
+    slot_matched = None
+    llm_result: dict[str, Any] = {"used": False, "error": None, "intent": "unclear",
+                                   "reply_text": "Got it — what day and time works best for you?"}
 
-    # Priority 1: Handle pending_booking confirmation (YES/NO)
-    if existing_pending and isinstance(existing_pending.get("slot"), str):
-        pending_slot = existing_pending["slot"]
+    booked_booking = conv_context.get("booked_booking")
+    handoff_info = conv_context.get("handoff_requested")
+    last_offer = conv_context.get("last_offer")
 
-        # Check idempotency: already booked this slot?
-        if booked_booking and booked_booking.get("slot") == pending_slot:
-            slot_display = _format_slot_for_confirmation(pending_slot)
-            out_text = f"Already booked ✅ You're confirmed for {slot_display}."
+    bot_settings = get_bot_settings(tenant)
+    llm_settings = get_llm_settings(tenant)
 
-        else:
-            yes_no = _detect_yes_no(text)
+    if booked_booking and isinstance(booked_booking.get("slot"), str):
+        # Already booked — idempotent reply
+        slot_display = _format_slot_for_confirmation(booked_booking["slot"])
+        out_text = f"You're already booked in for {slot_display}. See you then!"
+        route = "already_booked"
 
-            if yes_no == "yes":
-                # Book the slot
+    elif handoff_info:
+        # Handoff already in progress — human will follow up, bot steps back
+        out_text = "Someone from the team will be in touch with you shortly."
+        route = "handoff_pending"
+
+    else:
+        # LLM-driven intent classification + reply composition
+
+        # Load recent conversation history for LLM context
+        msg_rows = await conn.fetch(LOAD_RECENT_MESSAGES_SQL, conversation_id)
+        conversation_history = [
+            {"role": "user" if r["direction"] == "inbound" else "assistant", "text": r["text"]}
+            for r in msg_rows
+        ]
+
+        # Get active offered slots (only if not expired)
+        offered_slots: list[str] = []
+        display_slots: list[str] = []
+        if last_offer and isinstance(last_offer.get("offered_slots"), list):
+            if not _is_offer_expired(last_offer.get("offered_at", "")):
+                offered_slots = last_offer["offered_slots"]
+                offer_tz = last_offer.get("timezone", "Europe/London")
+                display_slots = format_slots_for_display(offered_slots, timezone=offer_tz)
+
+        # LLM classifies intent + composes reply
+        llm_result = await process_inbound_message(
+            conversation_history=conversation_history,
+            offered_slots=offered_slots,
+            display_slots=display_slots,
+            tenant_context=bot_settings["context"],
+            llm_settings=llm_settings,
+        )
+
+        intent = llm_result["intent"]
+        route = intent
+        out_text = llm_result["reply_text"]
+
+        if intent == "select_slot" and llm_result.get("should_book") and llm_result.get("slot_index") is not None:
+            slot_index = llm_result["slot_index"]
+            if 0 <= slot_index < len(offered_slots):
+                slot_iso = offered_slots[slot_index]
+                slot_matched = slot_iso
                 booking_result = await book_slot(
                     tenant_id=ev.tenant_id,
-                    slot_iso=pending_slot,
+                    slot_iso=slot_iso,
                     contact_id=contact_id,
                     conversation_id=conversation_id,
                     metadata={"source": "chatbot"},
                 )
-
                 if booking_result.get("success"):
-                    # Move to booked_booking, clear pending and last_offer
+                    slot_display = _format_slot_for_confirmation(slot_iso)
+                    out_text = f"Booked ✅ You're confirmed for {slot_display}. See you then!"
+                    route = "booked"
                     context_updates["booked_booking"] = {
-                        "slot": pending_slot,
+                        "slot": slot_iso,
                         "booking_id": booking_result["booking_id"],
                         "booked_at": now.isoformat(),
                     }
-                    context_updates["pending_booking"] = None
                     context_updates["last_offer"] = None
-
-                    slot_display = _format_slot_for_confirmation(pending_slot)
-                    out_text = f"Booked ✅ You're confirmed for {slot_display}. See you then!"
-
-                    # Emit engine event
                     await _emit_booking_event(
                         conn,
                         tenant_id=ev.tenant_id,
                         ev=ev,
                         contact_id=contact_id,
-                        slot_iso=pending_slot,
+                        slot_iso=slot_iso,
                         booking_id=booking_result["booking_id"],
                         now=now,
                     )
                 else:
-                    out_text = "Sorry, there was an issue booking that slot. Please try again or choose another time."
+                    out_text = "Sorry, I couldn't book that slot — it may have just been taken. Want me to find another time?"
+                    route = "booking_failed"
 
-            elif yes_no == "no":
-                # Clear pending_booking, re-offer slots
-                context_updates["pending_booking"] = None
+        elif intent == "request_specific_time":
+            # Lead asked for a specific time — find it and book if available
+            preferred_day = llm_result.get("preferred_day")
+            explicit_time = llm_result.get("explicit_time") or ""
+            target_hour = _parse_explicit_time_to_hour(explicit_time) if explicit_time else None
 
-                if last_offer and isinstance(last_offer.get("slots"), list) and not _is_offer_expired(last_offer.get("offered_at", "")):
-                    # Re-display existing offer
-                    display_slots = format_slots_for_display(last_offer["slots"], timezone=last_offer.get("timezone", "Europe/London"))
-                    slot_list = "\n".join(f"• {s}" for s in display_slots)
-                    out_text = f"No problem! Here are the options again:\n\n{slot_list}\n\nWhich one works best for you?"
-                else:
-                    # Ask for new preference
-                    out_text = "No problem — what day and time would work better for you?"
+            # Fetch all available slots
+            tenant_for_slots = await load_tenant(conn, ev.tenant_id)
+            cal_for_slots = get_calendar_settings(tenant_for_slots)
+            booking_cfg_for_slots = get_booking_config(tenant_for_slots)
+            tz_str = booking_cfg_for_slots.get("timezone", "Europe/London")
+            credentials_for_slots = await load_tenant_credentials(conn, ev.tenant_id, provider="ghl")
+            ghl_creds_for_slots = credentials_for_slots.get("ghl", {})
+            access_token_for_slots = ghl_creds_for_slots.get("access_token")
+            calendar_id_for_slots = cal_for_slots.get("calendar_id")
 
-            else:
-                # Neither YES nor NO - remind user
-                slot_display = _format_slot_for_confirmation(pending_slot)
-                out_text = f"Just to confirm: shall I book you in for {slot_display}? Reply YES to confirm or NO to choose another time."
+            all_slots_for_specific: list[str] = []
+            if access_token_for_slots and calendar_id_for_slots:
+                _start = now
+                _end = now + timedelta(days=14)
+                try:
+                    all_slots_for_specific, _ = await get_free_slots(
+                        access_token=access_token_for_slots,
+                        calendar_id=calendar_id_for_slots,
+                        start_dt=_start,
+                        end_dt=_end,
+                        timezone=tz_str,
+                    )
+                except Exception:
+                    pass
 
-    # Priority 2: Check for slot selection from last_offer
-    elif last_offer and isinstance(last_offer.get("slots"), list):
-        offered_at = last_offer.get("offered_at", "")
-        offer_expired = _is_offer_expired(offered_at)
-
-        if not offer_expired:
-            slot_matched = _match_slot_from_text(text, last_offer["slots"])
-
-        if slot_matched:
-            # Check if user also expressed confirmation intent (auto-confirm)
-            # Load LLM settings for fallback detection
-            try:
-                tenant = await load_tenant(conn, ev.tenant_id)
-                llm_settings = get_llm_settings(tenant)
-            except Exception:
-                llm_settings = None
-
-            has_confirmation = await _detect_confirmation_intent(text, llm_settings)
-
-            if has_confirmation:
-                # Auto-confirm: book immediately without pending step
-                booking_result = await book_slot(
-                    tenant_id=ev.tenant_id,
-                    slot_iso=slot_matched,
-                    contact_id=contact_id,
-                    conversation_id=conversation_id,
-                    metadata={"source": "chatbot", "auto_confirmed": True},
+            if target_hour is not None and all_slots_for_specific:
+                nearest = _find_nearest_slot(
+                    all_slots_for_specific, preferred_day, target_hour, tz_str, tolerance_minutes=45
                 )
-
-                if booking_result.get("success"):
-                    context_updates["booked_booking"] = {
-                        "slot": slot_matched,
-                        "booking_id": booking_result["booking_id"],
-                        "booked_at": now.isoformat(),
-                    }
-                    context_updates["pending_booking"] = None
-                    context_updates["last_offer"] = None
-
-                    slot_display = _format_slot_for_confirmation(slot_matched)
-                    out_text = f"Booked ✅ You're confirmed for {slot_display}. See you then!"
-
-                    # Emit engine event
-                    await _emit_booking_event(
-                        conn,
+                if nearest:
+                    # Found a slot close enough — book it
+                    slot_matched = nearest
+                    booking_result = await book_slot(
                         tenant_id=ev.tenant_id,
-                        ev=ev,
+                        slot_iso=nearest,
                         contact_id=contact_id,
-                        slot_iso=slot_matched,
-                        booking_id=booking_result["booking_id"],
-                        now=now,
+                        conversation_id=conversation_id,
+                        metadata={"source": "chatbot"},
                     )
+                    if booking_result.get("success"):
+                        slot_display = _format_slot_for_confirmation(nearest)
+                        out_text = f"Booked ✅ You're confirmed for {slot_display}. See you then!"
+                        route = "booked"
+                        context_updates["booked_booking"] = {
+                            "slot": nearest,
+                            "booking_id": booking_result["booking_id"],
+                            "booked_at": now.isoformat(),
+                        }
+                        context_updates["last_offer"] = None
+                        await _emit_booking_event(
+                            conn,
+                            tenant_id=ev.tenant_id,
+                            ev=ev,
+                            contact_id=contact_id,
+                            slot_iso=nearest,
+                            booking_id=booking_result["booking_id"],
+                            now=now,
+                        )
+                    else:
+                        out_text = "Sorry, I couldn't lock that slot in — it may have just gone. Want me to find another time?"
+                        route = "booking_failed"
                 else:
-                    # Booking failed - fall back to pending flow
-                    pending_booking = {
-                        "slot": slot_matched,
-                        "created_at": now.isoformat(),
-                    }
-                    context_updates["pending_booking"] = pending_booking
-
-                    slot_display = _format_slot_for_confirmation(slot_matched)
-                    out_text = f"Perfect — shall I book you in for {slot_display}? Reply YES to confirm or NO to choose another."
+                    # Nothing close — offer 2 nearest alternatives
+                    alts = _find_two_nearest_slots(all_slots_for_specific, preferred_day, target_hour, tz_str)
+                    display_alts = format_slots_for_display(alts, timezone=tz_str)
+                    if display_alts:
+                        if len(display_alts) >= 2:
+                            out_text = f"I don't have {explicit_time} I'm afraid. Nearest I've got is {display_alts[0]} or {display_alts[1]} — would either of those work?"
+                        else:
+                            out_text = f"I don't have {explicit_time} I'm afraid. Nearest I've got is {display_alts[0]} — does that work?"
+                        new_last_offer = {"offered_slots": alts, "offered_at": now.isoformat(), "timezone": tz_str}
+                        context_updates["last_offer"] = new_last_offer
+                    else:
+                        out_text = f"I'm afraid I don't have {explicit_time} available. What other times work for you?"
+                    route = "offer_slots"
             else:
-                # No confirmation intent - create pending_booking as before
-                pending_booking = {
-                    "slot": slot_matched,
-                    "created_at": now.isoformat(),
-                }
-                context_updates["pending_booking"] = pending_booking
+                # Couldn't parse time or no slots — fall back to broad offer
+                out_text, new_last_offer = await _handle_offer_slots(conn, ev.tenant_id, _NullRouteInfo())
+                context_updates["last_offer"] = new_last_offer
+                route = "offer_slots"
 
-                slot_display = _format_slot_for_confirmation(slot_matched)
-                out_text = f"Perfect — shall I book you in for {slot_display}? Reply YES to confirm or NO to choose another."
-
-        elif not offer_expired:
-            # User has an active offer but didn't match a slot - prompt again
-            offer_tz = last_offer.get("timezone", "Europe/London")
-            display_slots = format_slots_for_display(last_offer["slots"], timezone=offer_tz)
-            if len(display_slots) == 2:
-                out_text = f"Reply 1 for {display_slots[0]} or 2 for {display_slots[1]}."
-            elif len(display_slots) == 1:
-                out_text = f"Reply 1 for {display_slots[0]}."
+        elif intent == "request_slots":
+            # Broad availability request — offer 1 morning + 1 afternoon for the requested day/time
+            preferred_day = llm_result.get("preferred_day")
+            preferred_time = llm_result.get("preferred_time")
+            if preferred_day or preferred_time:
+                class _LLMSignals:
+                    day = preferred_day
+                    time_window = preferred_time
+                    explicit_time = None
+                class _LLMRouteInfo:
+                    route = "offer_slots"
+                    signals = _LLMSignals()
+                slot_route_info = _LLMRouteInfo()
             else:
-                out_text = "I didn't catch which time you'd like. What day and time would work for you?"
-
-        elif route_info.route == "offer_slots":
-            # Expired offer but user is asking for slots again
-            out_text, new_last_offer = await _handle_offer_slots(conn, ev.tenant_id, route_info)
+                slot_route_info = route_info
+            slot_text, new_last_offer = await _handle_offer_slots(conn, ev.tenant_id, slot_route_info)
             context_updates["last_offer"] = new_last_offer
+            route = "offer_slots"
+            # Check if the day preference was satisfied; if not, say so
+            preamble = ""
+            if preferred_day and new_last_offer.get("offered_slots"):
+                offer_tz = new_last_offer.get("timezone", "Europe/London")
+                _tz = ZoneInfo(offer_tz)
+                slot_days = []
+                for _s in new_last_offer["offered_slots"]:
+                    _dt = datetime.fromisoformat(_s)
+                    if _dt.tzinfo is None:
+                        _dt = _dt.replace(tzinfo=_tz)
+                    slot_days.append(_dt.strftime("%A").lower())
+                if not any(preferred_day.lower() in _d for _d in slot_days):
+                    preamble = f"I don't have anything on {preferred_day.capitalize()} I'm afraid —"
+            out_text = f"{preamble} {slot_text}".strip() if preamble else slot_text
 
-        else:
-            # Expired offer, normal routing
-            out_text = compose_reply(route_info)
+        elif intent == "wants_human" and llm_result.get("should_handoff"):
+            # Handoff requested — bot steps back, human takes over
+            # out_text is already set from LLM reply (natural "I'll get someone from the team...")
+            context_updates["handoff_requested"] = {"at": now.isoformat()}
+            route = "wants_human"
 
-    elif route_info.route == "offer_slots":
-        # No last_offer, generate new slots
-        out_text, new_last_offer = await _handle_offer_slots(conn, ev.tenant_id, route_info)
-        context_updates["last_offer"] = new_last_offer
+        elif intent == "decline":
+            context_updates["declined"] = {"at": now.isoformat()}
+            route = "decline"
 
-    else:
-        # Normal routing
-        out_text = compose_reply(route_info)
+        # else intent == "unclear" — LLM reply_text already set
 
     # Store context updates if any
     if context_updates:
         await conn.execute(UPDATE_CONVERSATION_CONTEXT_SQL, conversation_id, context_updates)
-
-    # LLM copy polishing (optional)
-    # out_text is now the template_text; we may rewrite it
-    template_text = out_text
-    final_text = template_text
-    llm_metadata: dict[str, Any] = {
-        "enabled": False,
-        "used": False,
-        "model": None,
-        "prompt_version": None,
-        "error": None,
-        "rewritten_at": None,
-    }
-
-    # Load tenant for LLM settings
-    try:
-        tenant = await load_tenant(conn, ev.tenant_id)
-        llm_settings = get_llm_settings(tenant)
-        llm_metadata["enabled"] = llm_settings["enabled"]
-
-        if llm_settings["enabled"]:
-            llm_metadata["model"] = llm_settings["model"]
-            llm_metadata["prompt_version"] = llm_settings["prompt_version"]
-
-            # Call LLM rewriter
-            llm_result = await rewrite_outbound_text_llm(
-                llm_settings=llm_settings,
-                template_text=template_text,
-            )
-
-            llm_metadata["used"] = llm_result["used"]
-            llm_metadata["error"] = llm_result["error"]
-            llm_metadata["rewritten_at"] = llm_result["rewritten_at"]
-
-            # Use rewritten text if successful, otherwise fallback to template
-            if llm_result["used"] and llm_result["rewritten_text"]:
-                final_text = llm_result["rewritten_text"]
-            # else: final_text remains template_text (safe fallback)
-
-    except Exception as e:
-        # LLM failure should never block message sending
-        llm_metadata["error"] = f"llm_load_exception:{str(e)[:100]}"
-        # final_text remains template_text
 
     # Create pending outbound message
     out_payload_dict: dict[str, Any] = {
         "send_status": "pending",
         "send_attempts": 0,
         "send_last_error": None,
-        "route": route_info.route,
-        "text_template": template_text,
-        "text_final": final_text,
-        "llm": llm_metadata,
+        "route": route,
+        "text_final": out_text,
+        "llm": {
+            "enabled": llm_settings.get("enabled", False),
+            "used": llm_result.get("used", False),
+            "model": llm_settings.get("model"),
+            "error": llm_result.get("error"),
+        },
     }
     if new_last_offer:
-        out_payload_dict["offered_slots"] = new_last_offer["slots"]
+        out_payload_dict["offered_slots"] = new_last_offer.get("slots", [])
         out_payload_dict["calendar_check"] = new_last_offer.get("calendar_check")
-    if pending_booking:
-        out_payload_dict["pending_booking"] = pending_booking
     if booking_result:
         out_payload_dict["booking_result"] = booking_result
 
@@ -1185,22 +1215,17 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
         contact_id,
         ev.provider,
         ev.channel,
-        final_text,  # Use final_text (rewritten or template)
+        out_text,
         out_payload_dict,  # Pass dict directly - asyncpg codec handles JSON encoding
         ev.trace_id,  # $8 - propagate trace_id
     )
 
     # Glass-box: build debug snapshot for conversation context
-    # Determine state transition
     state_from = conv_context.get("_last_step", "start")
-    state_to = route_info.route
-    if booking_result and booking_result.get("success"):
-        state_to = "booked"
-    elif pending_booking:
-        state_to = "pending_confirmation"
+    state_to = route
 
     debug_snapshot = build_debug_snapshot(
-        route=route_info.route,
+        route=route,
         signals={
             "day": route_info.signals.day,
             "time_window": route_info.signals.time_window,
@@ -1214,17 +1239,12 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
         transition={"from": state_from, "to": state_to},
     )
 
-    # Update conversation context with debug snapshot (overwrite-only)
+    # Update conversation context with debug snapshot
     debug_context = {"debug": {"last_run": debug_snapshot}, "_last_step": state_to}
     await conn.execute(UPDATE_CONVERSATION_CONTEXT_SQL, conversation_id, debug_context)
 
     # Glass-box: structured logging
-    # Load tenant_slug for logging (best-effort)
-    try:
-        tenant = await load_tenant(conn, ev.tenant_id)
-        tenant_slug = tenant.get("tenant_slug", ev.tenant_id)
-    except Exception:
-        tenant_slug = ev.tenant_id
+    tenant_slug = tenant.get("tenant_slug", ev.tenant_id)
 
     calendar_result = None
     if new_last_offer and new_last_offer.get("calendar_check"):
@@ -1240,7 +1260,7 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
         contact_id=contact_id,
         conversation_id=conversation_id,
         trace_id=ev.trace_id,
-        route=route_info.route,
+        route=route,
         signals={
             "day": route_info.signals.day,
             "time_window": route_info.signals.time_window,
@@ -1263,7 +1283,7 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
         "conversation_id": conversation_id,
         "message_id": message_id,
         "out_message_id": out_message_id,
-        "route": route_info.route,
+        "route": route,
         "slot_matched": slot_matched,
         "booking_id": booking_result.get("booking_id") if booking_result else None,
         "trace_id": ev.trace_id,

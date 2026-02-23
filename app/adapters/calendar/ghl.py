@@ -173,6 +173,7 @@ def pick_soonest_two_slots(
     slots: list[str],
     timezone: str = "Europe/London",
     contrast_pool: list[str] | None = None,
+    target_hour: float | None = None,
 ) -> list[str]:
     """
     Pick exactly 2 slots:
@@ -219,6 +220,14 @@ def pick_soonest_two_slots(
 
     # Sort by UTC time (chronological)
     parsed.sort(key=lambda x: x[0])
+
+    # If target_hour is set, re-sort by proximity to that time of day then pick nearest 2
+    if target_hour is not None:
+        parsed.sort(key=lambda x: abs(x[1].hour + x[1].minute / 60 - target_hour))
+        result = [iso for _, _, iso in parsed[:2]]
+        result_parsed = [(datetime.fromisoformat(iso.replace("Z", "+00:00")), iso) for iso in result]
+        result_parsed.sort(key=lambda x: x[0])
+        return [iso for _, iso in result_parsed]
 
     # Slot A = first preference-matched slot (closest to user preference)
     slot_a_utc, slot_a_local, slot_a_iso = parsed[0]
