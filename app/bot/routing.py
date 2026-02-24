@@ -97,16 +97,17 @@ def extract_signals(text: str) -> Signals:
 
     # Extract day — collect all matches, skip negated ones
     # e.g. "Tuesday doesn't work, how about Friday?" → picks Friday, not Tuesday
-    day_matches: list[tuple[str, int]] = []  # (day_name, position)
+    day_matches: list[tuple[str, int, int]] = []  # (day_name, start, end)
     for pattern, day_name in DAY_PATTERNS.items():
         for m in re.finditer(pattern, t, re.IGNORECASE):
-            day_matches.append((day_name, m.start()))
+            day_matches.append((day_name, m.start(), m.end()))
 
     affirmative: list[tuple[str, int]] = []
-    for day_name, pos in day_matches:
-        window = t[max(0, pos - 50): pos]
-        if not _NEGATION_RE.search(window):
-            affirmative.append((day_name, pos))
+    for day_name, start, end in day_matches:
+        window_before = t[max(0, start - 50): start]
+        window_after  = t[end: min(len(t), end + 50)]
+        if not _NEGATION_RE.search(window_before) and not _NEGATION_RE.search(window_after):
+            affirmative.append((day_name, start))
 
     if affirmative:
         # Pick earliest affirmative day mention
