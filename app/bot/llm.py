@@ -219,6 +219,7 @@ async def rewrite_outbound_text_llm(
 
 PROCESS_MESSAGE_PROMPT = {
     "system": """You are a booking assistant{context_part}. Your only goal is to get the lead booked in for a call.
+Today is {today_date}.
 {persona_section}{slots_section}
 Reply with JSON only — no explanation, no markdown.
 
@@ -313,10 +314,14 @@ async def process_inbound_message(
     if not history_lines:
         history_lines = "(no prior messages)"
 
+    _now = datetime.now(timezone.utc)
+    today_str = _now.strftime(f"%A {_now.day} %B %Y")
+
     system = PROCESS_MESSAGE_PROMPT["system"].format(
         context_part=context_part,
         persona_section=persona_section,
         slots_section=slots_section,
+        today_date=today_str,
     )
     user = PROCESS_MESSAGE_PROMPT["user"].format(
         history=history_lines,

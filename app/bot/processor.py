@@ -1231,10 +1231,12 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
                 _resolved_day = preferred_day or getattr(_pm_sig, "day", None)
                 _resolved_time_window = preferred_time or _pm_time_window
                 _resolved_explicit_time = _pm_explicit_time
+                _resolved_explicit_date = getattr(_pm_sig, "explicit_date", None)
                 class _LLMSignals:
                     day = _resolved_day
                     time_window = _resolved_time_window
                     explicit_time = _resolved_explicit_time
+                    explicit_date = _resolved_explicit_date
                 class _LLMRouteInfo:
                     route = "offer_slots"
                     signals = _LLMSignals()
