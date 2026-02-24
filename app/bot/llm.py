@@ -154,6 +154,28 @@ async def _call_llm(
         elif model.startswith("claude-"):
             return await _call_anthropic(model, system, user, temperature, max_tokens, timeout)
 
+        elif model.startswith("groq/"):
+            groq_model = model[len("groq/"):]
+            api_key = os.getenv("GROQ_API_KEY")
+            if not api_key:
+                return None
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": groq_model,
+                        "messages": [
+                            {"role": "system", "content": system},
+                            {"role": "user", "content": user},
+                        ],
+                        "temperature": temperature,
+                        "max_tokens": max_tokens,
+                    },
+                )
+                resp.raise_for_status()
+                return resp.json()["choices"][0]["message"]["content"].strip()
+
         return None  # Unknown model
 
     except Exception as e:
