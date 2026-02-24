@@ -296,25 +296,25 @@ Cannot be confidently classified into any of the above.
 FEW-SHOT EXAMPLES
 
 Message: "Hi Ariyah, im in meetings all day tomorrow. Would Friday around 3 or 4 work?"
-→ {"intent": "request_specific_time", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": "friday", "preferred_time": null, "explicit_time": "3:00pm", "reply_text": ""}
+→ {{"intent": "request_specific_time", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": "friday", "preferred_time": null, "explicit_time": "3:00pm", "reply_text": ""}}
 
 Message: "Tuesday doesn't work for me. How about friday 6th around 2pm?"
-→ {"intent": "request_specific_time", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": "friday", "preferred_time": null, "explicit_time": "2:00pm", "reply_text": ""}
+→ {{"intent": "request_specific_time", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": "friday", "preferred_time": null, "explicit_time": "2:00pm", "reply_text": ""}}
 
 Message: "Would Friday around 3 or 4 work for Chris?"
-→ {"intent": "request_specific_time", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": "friday", "preferred_time": null, "explicit_time": "3:00pm", "reply_text": ""}
+→ {{"intent": "request_specific_time", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": "friday", "preferred_time": null, "explicit_time": "3:00pm", "reply_text": ""}}
 
 Message: "Can I do Thursday at 4:35pm instead?"
-→ {"intent": "request_specific_time", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": "thursday", "preferred_time": null, "explicit_time": "4:35pm", "reply_text": ""}
+→ {{"intent": "request_specific_time", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": "thursday", "preferred_time": null, "explicit_time": "4:35pm", "reply_text": ""}}
 
 Message: "Got anything on Friday afternoon?"
-→ {"intent": "request_slots", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": "friday", "preferred_time": "afternoon", "explicit_time": null, "reply_text": ""}
+→ {{"intent": "request_slots", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": "friday", "preferred_time": "afternoon", "explicit_time": null, "reply_text": ""}}
 
 Message: "Yes, the first one works for me"
-→ {"intent": "select_slot", "slot_index": 0, "should_book": true, "should_handoff": false, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": ""}
+→ {{"intent": "select_slot", "slot_index": 0, "should_book": true, "should_handoff": false, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": ""}}
 
 Message: "yes that works but can I speak to someone first?"
-→ {"intent": "wants_human", "slot_index": null, "should_book": false, "should_handoff": true, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": "Of course! I'll get someone to reach out to you shortly."}
+→ {{"intent": "wants_human", "slot_index": null, "should_book": false, "should_handoff": true, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": "Of course! I'll get someone to reach out to you shortly."}}
 
 CRITICAL RULES
 - Questions ("would X work?", "what about Friday?") are NEVER select_slot
