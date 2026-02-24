@@ -1228,7 +1228,7 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
             _pm_time_window = getattr(_pm_sig, "time_window", None)
             _pm_explicit_time = getattr(_pm_sig, "explicit_time", None)
             if preferred_day or preferred_time or _pm_time_window or _pm_explicit_time:
-                _resolved_day = getattr(_pm_sig, "day", None) or preferred_day
+                _resolved_day = preferred_day or getattr(_pm_sig, "day", None)
                 _resolved_time_window = preferred_time or _pm_time_window
                 _resolved_explicit_time = _pm_explicit_time
                 _resolved_explicit_date = getattr(_pm_sig, "explicit_date", None)
@@ -1248,7 +1248,7 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
             route = "offer_slots"
             # Check if the day/date preference was satisfied; if not, say so
             # Use resolved_day (which may come from pattern matcher) not just LLM preferred_day
-            _check_day = getattr(route_info.signals, "day", None) or preferred_day
+            _check_day = preferred_day or getattr(route_info.signals, "day", None)
             _check_date = getattr(route_info.signals, "explicit_date", None)
             preamble = ""
             if (_check_day or _check_date) and new_last_offer.get("offered_slots"):

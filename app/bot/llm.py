@@ -235,7 +235,7 @@ Rules:
 - If offered slots are active and lead accepts or references a matching offered slot → "select_slot"
 - If lead mentions a DIFFERENT day or time not in the current offered slots → "request_slots" or "request_specific_time"
 - slot_index is 0, 1, or null
-- preferred_day: the day they ARE requesting, or null. Ignore rejected/negated days — if they say "Tuesday doesn't work, how about Friday?" → preferred_day is "friday". If they say "not Monday, what about Wednesday?" → preferred_day is "wednesday".
+- preferred_day: the day they ARE requesting, or null. Ignore rejected/negated days — if they say "Tuesday doesn't work, how about Friday?" → preferred_day is "friday". If they say "not Monday, what about Wednesday?" → preferred_day is "wednesday". IMPORTANT: extract the day NAME exactly as written — if they say "friday 6th", preferred_day is "friday". Never calculate which weekday a date number falls on.
 - explicit_time: for request_specific_time only — the exact time they asked for as a string (e.g. "4:35", "9:30", "15:00"). Use 24h if obvious, otherwise as stated.
 - preferred_time: for request_slots only — "morning", "afternoon", "evening", or null
 - reply_text: for select_slot/wants_human/decline/unclear → full reply. For request_specific_time and request_slots → leave as empty string "" — the system will compose the slot response.
