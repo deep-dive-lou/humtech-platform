@@ -572,7 +572,7 @@ def _build_booking_confirmation(slot_iso: str, template: str, timezone: str = "E
     period = "am" if hour < 12 else "pm"
     hour_12 = hour % 12 or 12
     return template.format(
-        day=slot_dt.strftime("%a"),
+        day=slot_dt.strftime("%A"),
         date=str(slot_dt.day),
         month=slot_dt.strftime("%B"),
         time=f"{hour_12}:{minute}{period}",
