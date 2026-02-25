@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document Requests — HumTech Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen">
+
+  <!-- Header -->
+  <div class="bg-white border-b border-gray-200 sticky top-0 z-10">
+    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div>
+        <p class="text-xs font-semibold tracking-widest text-gray-400 uppercase">HumTech</p>
+        <h1 class="text-lg font-semibold">Document Requests</h1>
+      </div>
+      <a href="/portal/staff/logout" class="text-sm text-gray-500 hover:text-gray-900">Sign out</a>
+    </div>
+  </div>
+
+  <div class="max-w-5xl mx-auto px-6 py-8">
+
+    {% if not requests %}
+    <div class="text-center py-16 text-gray-400">
+      <p class="text-sm">No document requests yet.</p>
+    </div>
+    {% else %}
+    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-gray-100 bg-gray-50 text-left">
+            <th class="px-5 py-3 font-medium text-gray-500">Client</th>
+            <th class="px-5 py-3 font-medium text-gray-500">Status</th>
+            <th class="px-5 py-3 font-medium text-gray-500">Progress</th>
+            <th class="px-5 py-3 font-medium text-gray-500">Due</th>
+            <th class="px-5 py-3 font-medium text-gray-500">Created</th>
+            <th class="px-5 py-3"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for r in requests %}
+          <tr class="hover:bg-gray-50 transition-colors">
+            <td class="px-5 py-3">
+              <p class="font-medium">{{ r.client_name or "—" }}</p>
+              <p class="text-xs text-gray-400">{{ r.client_email or "" }}</p>
+            </td>
+            <td class="px-5 py-3">
+              {% set s = r.status %}
+              {% if s == "draft" %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">Draft</span>
+              {% elif s == "sent" %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">Sent</span>
+              {% elif s == "viewed" %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">Viewed</span>
+              {% elif s == "in_progress" %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">In progress</span>
+              {% elif s == "submitted" %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">Submitted</span>
+              {% elif s == "completed" %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Completed</span>
+              {% else %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">{{ s }}</span>
+              {% endif %}
+            </td>
+            <td class="px-5 py-3 text-gray-500">
+              {{ r.item_done }} / {{ r.item_total }}
+            </td>
+            <td class="px-5 py-3 text-gray-500">
+              {% if r.due_at %}{{ r.due_at.strftime("%d %b %Y") }}{% else %}—{% endif %}
+            </td>
+            <td class="px-5 py-3 text-gray-400 text-xs">
+              {{ r.created_at.strftime("%d %b %Y") }}
+            </td>
+            <td class="px-5 py-3 text-right">
+              <a href="/portal/staff/requests/{{ r.id }}" class="text-xs font-medium text-gray-900 hover:underline">
+                View →
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+  </div>
+</body>
+</html>

@@ -6,3 +6,7 @@ cryptography
 uvicorn
 anthropic
 jinja2
+boto3
+bcrypt
+python-jose[cryptography]
+python-multipart

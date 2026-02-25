@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
@@ -11,12 +12,21 @@ from .bot.tenants import load_tenant_debug
 from .engine.webhooks import router as engine_webhooks_router
 from .outreach.routes import router as outreach_router
 from .bot.webhook import router as bot_webhook_router
+from .portal.routes import router as portal_router
+from .portal.staff_routes import router as portal_staff_router
+from .portal.auth import NotAuthenticated
 
 app = FastAPI(title="HumTech Platform", version="0.2.0")
 load_dotenv()
 app.include_router(engine_webhooks_router)
 app.include_router(outreach_router)
 app.include_router(bot_webhook_router)
+app.include_router(portal_router)
+app.include_router(portal_staff_router)
+
+@app.exception_handler(NotAuthenticated)
+async def _portal_auth_handler(request: Request, exc: NotAuthenticated):
+    return RedirectResponse(url="/portal/staff/login", status_code=303)
 
 @app.on_event("startup")
 async def _startup():
