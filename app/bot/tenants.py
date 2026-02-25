@@ -223,6 +223,10 @@ def get_bot_settings(tenant: dict[str, Any]) -> dict[str, Any]:
         "reengagement_delay_hours": int(reengagement.get("delay_hours", 6)),
         "reengagement_max_attempts": int(reengagement.get("max_attempts", 2)),
         "handoff_ghl_user_id": bot.get("handoff_ghl_user_id"),
+        "booking_confirmation_template": bot.get(
+            "booking_confirmation_template",
+            "Booked \u2705 You're confirmed for {day} {date} {month} at {time}. See you then!",
+        ),
     }
 
 

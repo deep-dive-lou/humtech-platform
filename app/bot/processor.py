@@ -555,6 +555,30 @@ def _format_slot_for_confirmation(slot_iso: str, timezone: str = "Europe/London"
     return slot_dt.strftime("%A %H:%M")
 
 
+def _build_booking_confirmation(slot_iso: str, template: str, timezone: str = "Europe/London") -> str:
+    """Format a booking confirmation message from a per-tenant template.
+
+    Supported placeholders: {day}, {date}, {month}, {time}
+    Example: "Confirmed for {day} {date} {month} at {time}."
+    """
+    tz = ZoneInfo(timezone)
+    slot_dt = datetime.fromisoformat(slot_iso)
+    if slot_dt.tzinfo is None:
+        slot_dt = slot_dt.replace(tzinfo=tz)
+    else:
+        slot_dt = slot_dt.astimezone(tz)
+    hour = slot_dt.hour
+    minute = slot_dt.strftime("%M")
+    period = "am" if hour < 12 else "pm"
+    hour_12 = hour % 12 or 12
+    return template.format(
+        day=slot_dt.strftime("%a"),
+        date=str(slot_dt.day),
+        month=slot_dt.strftime("%B"),
+        time=f"{hour_12}:{minute}{period}",
+    )
+
+
 async def _emit_booking_event(
     conn: asyncpg.Connection,
     *,
@@ -1122,8 +1146,7 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
                     metadata={"source": "chatbot"},
                 )
                 if booking_result.get("success"):
-                    slot_display = _format_slot_for_confirmation(slot_iso)
-                    out_text = f"Booked ✅ You're confirmed for {slot_display}. See you then!"
+                    out_text = _build_booking_confirmation(slot_iso, bot_settings["booking_confirmation_template"])
                     route = "booked"
                     context_updates["booked_booking"] = {
                         "slot": slot_iso,
@@ -1190,8 +1213,7 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
                         metadata={"source": "chatbot"},
                     )
                     if booking_result.get("success"):
-                        slot_display = _format_slot_for_confirmation(nearest)
-                        out_text = f"Booked ✅ You're confirmed for {slot_display}. See you then!"
+                        out_text = _build_booking_confirmation(nearest, bot_settings["booking_confirmation_template"])
                         route = "booked"
                         context_updates["booked_booking"] = {
                             "slot": nearest,
