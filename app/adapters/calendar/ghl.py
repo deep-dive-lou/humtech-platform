@@ -567,3 +567,67 @@ async def book_slot(
         "conversation_id": conversation_id,
         "raw_response": data,
     }
+
+
+async def cancel_booking(
+    tenant_id: str,
+    booking_id: str,
+) -> dict[str, Any]:
+    """
+    Cancel a booking via the GHL Calendar Events API.
+
+    DELETE https://services.leadconnectorhq.com/calendars/events/{booking_id}
+
+    On 401: refreshes the token once and retries.
+    """
+    import logging
+    from app.db import get_pool
+    from app.adapters.ghl.auth import get_valid_token
+
+    logger = logging.getLogger(__name__)
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        access_token = await get_valid_token(conn, tenant_id)
+
+    url = f"{BASE_URL}/calendars/events/{booking_id}"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/json",
+        "Version": "2021-07-28",
+    }
+
+    logger.info(json.dumps({
+        "event": "ghl_cancel_booking_request",
+        "tenant_id": tenant_id,
+        "booking_id": booking_id,
+    }))
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.delete(url, headers=headers)
+
+        if resp.status_code == 401:
+            logger.info(json.dumps({
+                "event": "ghl_cancel_booking_401_retry",
+                "tenant_id": tenant_id,
+            }))
+            async with pool.acquire() as conn:
+                access_token = await get_valid_token(conn, tenant_id)
+            headers["Authorization"] = f"Bearer {access_token}"
+            resp = await client.delete(url, headers=headers)
+
+    logger.info(json.dumps({
+        "event": "ghl_cancel_booking_response",
+        "tenant_id": tenant_id,
+        "booking_id": booking_id,
+        "status": resp.status_code,
+    }))
+
+    if resp.status_code in (200, 204):
+        return {"success": True, "booking_id": booking_id}
+
+    return {
+        "success": False,
+        "error": f"ghl_api_error:{resp.status_code}",
+        "detail": resp.text[:300],
+    }

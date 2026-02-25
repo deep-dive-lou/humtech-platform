@@ -250,10 +250,11 @@ Read the lead's FULL message and understand complete context before classifying.
 CLASSIFICATION ORDER (read full message first, then apply in this order to prevent accidental bookings):
 1. decline — lead is not interested
 2. wants_human — lead wants a person
-3. select_slot — lead is clearly confirming an offered slot
-4. request_specific_time — lead asks for a time (exact or approximate)
-5. request_slots — lead asks for general availability with no time
-6. unclear — cannot confidently classify
+3. reschedule — lead wants to change or cancel an existing booking
+4. select_slot — lead is clearly confirming an offered slot
+5. request_specific_time — lead asks for a time (exact or approximate)
+6. request_slots — lead asks for general availability with no time
+7. unclear — cannot confidently classify
 
 INTENT DEFINITIONS
 
@@ -287,6 +288,11 @@ preferred_day = ONLY the day they are ASKING FOR (not days mentioned as context)
 "wants_human"
 Lead wants to speak to a person: "can I speak to someone?", "call me", "I'd rather talk to a person".
 
+"reschedule"
+Lead wants to change, move, or cancel an existing appointment.
+Use if: "can I reschedule", "need to change my appointment", "can we move it", "different time", "can I rebook", "cancel my booking", "change the time".
+→ reply_text: "" (bot handles cancellation and re-offers slots automatically)
+
 "decline"
 Lead is not interested: "not interested", "no thanks", "stop", "leave me alone".
 
@@ -316,11 +322,17 @@ Message: "Yes, the first one works for me"
 Message: "yes that works but can I speak to someone first?"
 → {{"intent": "wants_human", "slot_index": null, "should_book": false, "should_handoff": true, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": "Of course! I'll get someone to reach out to you shortly."}}
 
+Message: "Actually can I change the appointment time?"
+→ {{"intent": "reschedule", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": ""}}
+
+Message: "Can I reschedule to a different day?"
+→ {{"intent": "reschedule", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": ""}}
+
 CRITICAL RULES
 - Questions ("would X work?", "what about Friday?") are NEVER select_slot
 - preferred_day must be lowercase or null. Never calculate a weekday from a date number — read the written day name.
 - preferred_time must be "morning", "afternoon", "evening", or null
-- reply_text must be "" for select_slot/request_specific_time/request_slots
+- reply_text must be "" for select_slot/request_specific_time/request_slots/reschedule
 - Compose reply_text ONLY for wants_human/decline/unclear
 - Never fabricate a slot. Never guess. Never return multiple intents.
 - Ignore greetings, politeness words, emojis — focus on what the lead actually wants.
@@ -422,8 +434,6 @@ async def process_inbound_message(
             max_tokens=256,
             timeout=10.0,
         )
-        print(f"DEBUG LLM raw: {response}")
-
         if response:
             # Strip markdown fences if present
             clean = re.sub(r"^```(?:json)?\s*|\s*```$", "", response.strip(), flags=re.DOTALL)

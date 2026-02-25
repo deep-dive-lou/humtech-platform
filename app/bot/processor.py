@@ -14,6 +14,7 @@ from app.adapters.calendar.ghl import (
     format_slots_for_display,
     pick_soonest_two_slots,
     book_slot,
+    cancel_booking,
 )
 from app.bot.routing import route_from_text, route_info_to_dict
 from app.bot.tenants import (
@@ -1042,13 +1043,7 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
     bot_settings = get_bot_settings(tenant)
     llm_settings = get_llm_settings(tenant)
 
-    if booked_booking and isinstance(booked_booking.get("slot"), str):
-        # Already booked — idempotent reply
-        slot_display = _format_slot_for_confirmation(booked_booking["slot"])
-        out_text = f"You're already booked in for {slot_display}. See you then!"
-        route = "already_booked"
-
-    elif handoff_info:
+    if handoff_info:
         # Handoff already in progress — human will follow up, bot steps back
         out_text = "Someone from the team will be in touch with you shortly."
         route = "handoff_pending"
@@ -1086,7 +1081,35 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
         route = intent
         out_text = llm_result["reply_text"]
 
-        if intent == "select_slot" and llm_result.get("slot_index") is not None:
+        if intent == "reschedule":
+            if booked_booking and isinstance(booked_booking.get("slot"), str):
+                cancel_result = await cancel_booking(
+                    tenant_id=ev.tenant_id,
+                    booking_id=booked_booking["booking_id"],
+                )
+                if cancel_result.get("success"):
+                    context_updates["booked_booking"] = None
+                    slot_text, new_last_offer = await _handle_offer_slots(conn, ev.tenant_id, _NullRouteInfo())
+                    context_updates["last_offer"] = new_last_offer
+                    out_text = f"No problem, I've cancelled your booking! {slot_text}"
+                    route = "reschedule_offer"
+                else:
+                    out_text = "Sorry, I wasn't able to cancel the existing booking — please contact us directly to reschedule."
+                    route = "reschedule_failed"
+            else:
+                # No existing booking — just offer slots
+                slot_text, new_last_offer = await _handle_offer_slots(conn, ev.tenant_id, _NullRouteInfo())
+                context_updates["last_offer"] = new_last_offer
+                out_text = slot_text
+                route = "offer_slots"
+
+        elif booked_booking and isinstance(booked_booking.get("slot"), str):
+            # Already booked and not a reschedule — idempotent reply
+            slot_display = _format_slot_for_confirmation(booked_booking["slot"])
+            out_text = f"You're already booked in for {slot_display}. See you then!"
+            route = "already_booked"
+
+        elif intent == "select_slot" and llm_result.get("slot_index") is not None:
             slot_index = llm_result["slot_index"]
             if 0 <= slot_index < len(offered_slots):
                 slot_iso = offered_slots[slot_index]
@@ -1291,14 +1314,14 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
             context_updates["declined"] = {"at": now.isoformat()}
             route = "decline"
 
-        # else intent == "unclear" — LLM reply_text already set
+        # else intent == "unclear" — LLM reply_text already set (may be empty → bot goes silent)
 
     # Store context updates if any
     if context_updates:
         await conn.execute(UPDATE_CONVERSATION_CONTEXT_SQL, conversation_id, context_updates)
 
     # Close conversation on terminal outcomes
-    if route in ("booked", "wants_human", "decline"):
+    if route in ("wants_human", "decline"):
         await conn.execute(CLOSE_CONVERSATION_SQL, conversation_id)
 
     # Create pending outbound message (skip if LLM disabled — bot goes silent)
