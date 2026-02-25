@@ -46,13 +46,16 @@ def _get_s3():
 
 def presign_put(key: str, content_type: str, expires_seconds: int = 600) -> str:
     s3 = _get_s3()
+    # Do NOT include ACL in Params — boto3 adds x-amz-acl to SignedHeaders, which
+    # requires the client to send that header on the PUT. Our browser client doesn't
+    # send it, causing a 403 SignatureDoesNotMatch from Spaces. Objects inherit the
+    # bucket's default ACL (private) without needing it set per-object.
     return s3.generate_presigned_url(
         ClientMethod="put_object",
         Params={
             "Bucket": SPACES_BUCKET,
             "Key": key,
             "ContentType": content_type,
-            "ACL": "private",
         },
         ExpiresIn=expires_seconds,
     )
