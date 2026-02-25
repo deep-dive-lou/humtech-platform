@@ -1,5 +1,6 @@
 import os
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 SPACES_REGION = os.getenv("SPACES_REGION")
@@ -25,13 +26,20 @@ def _get_s3():
         ]
         if missing:
             raise RuntimeError(f"Missing Spaces env vars: {', '.join(missing)}")
+        # Use the region endpoint (not the bucket-specific endpoint) so boto3
+        # generates virtual-hosted presigned URLs in the form:
+        # https://{bucket}.{region}.digitaloceanspaces.com/{key}?...
+        # Using the bucket endpoint as endpoint_url causes boto3 to double the
+        # bucket name in the path (path-style default for custom endpoints).
+        region_endpoint = f"https://{SPACES_REGION}.digitaloceanspaces.com"
         session = boto3.session.Session()
         _s3 = session.client(
             "s3",
             region_name=SPACES_REGION,
-            endpoint_url=SPACES_ENDPOINT,
+            endpoint_url=region_endpoint,
             aws_access_key_id=SPACES_KEY,
             aws_secret_access_key=SPACES_SECRET,
+            config=Config(s3={"addressing_style": "virtual"}),
         )
     return _s3
 
