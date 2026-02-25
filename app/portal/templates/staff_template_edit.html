@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% if tmpl %}Edit Template{% else %}New Template{% endif %} — HumTech Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen">
+
+  <!-- Header -->
+  <div class="bg-white border-b border-gray-200 sticky top-0 z-10">
+    <div class="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <a href="/portal/staff/templates" class="text-sm text-gray-400 hover:text-gray-900">← Templates</a>
+        <span class="text-gray-200">|</span>
+        <h1 class="text-lg font-semibold">{% if tmpl %}{{ tmpl.name }}{% else %}New Template{% endif %}</h1>
+      </div>
+      <a href="/portal/staff/logout" class="text-sm text-gray-500 hover:text-gray-900">Sign out</a>
+    </div>
+  </div>
+
+  <div class="max-w-3xl mx-auto px-6 py-8 space-y-6">
+
+    <!-- Name + description form -->
+    <div class="bg-white rounded-xl border border-gray-200 p-5">
+      <h2 class="text-sm font-semibold mb-4">Template details</h2>
+      <form
+        method="POST"
+        action="{% if tmpl %}/portal/staff/templates/{{ tmpl.id }}{% else %}/portal/staff/templates{% endif %}"
+      >
+        <div class="space-y-4">
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Name <span class="text-red-400">*</span></label>
+            <input
+              type="text"
+              name="name"
+              required
+              value="{{ tmpl.name if tmpl else '' }}"
+              placeholder="e.g. Mortgage Application Pack"
+              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Description</label>
+            <input
+              type="text"
+              name="description"
+              value="{{ tmpl.description if tmpl and tmpl.description else '' }}"
+              placeholder="Optional — shown to staff when selecting a template"
+              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+            />
+          </div>
+        </div>
+        <div class="mt-4">
+          <button
+            type="submit"
+            class="text-sm font-medium bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors"
+          >
+            {% if tmpl %}Save changes{% else %}Create template{% endif %}
+          </button>
+        </div>
+      </form>
+    </div>
+
+    {% if tmpl %}
+    <!-- Items -->
+    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <h2 class="text-sm font-semibold">Checklist items</h2>
+        <span class="text-xs text-gray-400" id="item-count">{{ items | length }} item{{ 's' if items | length != 1 }}</span>
+      </div>
+
+      <div id="items-list" class="divide-y divide-gray-100">
+        {% for item in items %}
+        <div class="px-5 py-3 flex items-start gap-3" id="row-{{ item.id }}">
+          <div class="flex-1 space-y-1.5">
+            <input
+              type="text"
+              value="{{ item.title }}"
+              placeholder="Document title"
+              class="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-gray-900"
+              onblur="updateItem('{{ item.id }}', this)"
+              data-field="title"
+            />
+            <input
+              type="text"
+              value="{{ item.instructions or '' }}"
+              placeholder="Instructions (optional)"
+              class="w-full text-xs border border-gray-100 rounded-lg px-3 py-1.5 text-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-300"
+              onblur="updateItem('{{ item.id }}', this)"
+              data-field="instructions"
+            />
+          </div>
+          <div class="flex items-center gap-3 pt-1.5 flex-shrink-0">
+            <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+              <input
+                type="checkbox"
+                {% if item.required %}checked{% endif %}
+                onchange="updateItemRequired('{{ item.id }}', this)"
+                class="rounded"
+              />
+              Required
+            </label>
+            <button
+              onclick="deleteItem('{{ tmpl.id }}', '{{ item.id }}')"
+              class="text-xs text-gray-400 hover:text-red-500 transition-colors"
+            >
+              Remove
+            </button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <!-- Add item row -->
+      <div class="px-5 py-4 border-t border-gray-100 bg-gray-50">
+        <div class="flex items-start gap-3">
+          <div class="flex-1 space-y-1.5">
+            <input
+              type="text"
+              id="new-title"
+              placeholder="New item title"
+              class="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-gray-900"
+              onkeydown="if(event.key==='Enter'){event.preventDefault();addItem();}"
+            />
+            <input
+              type="text"
+              id="new-instructions"
+              placeholder="Instructions (optional)"
+              class="w-full text-xs border border-gray-100 rounded-lg px-3 py-1.5 bg-white text-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-300"
+              onkeydown="if(event.key==='Enter'){event.preventDefault();addItem();}"
+            />
+          </div>
+          <div class="flex items-center gap-3 pt-1.5 flex-shrink-0">
+            <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+              <input type="checkbox" id="new-required" checked class="rounded" />
+              Required
+            </label>
+            <button
+              onclick="addItem()"
+              class="text-xs font-medium border border-gray-300 px-3 py-1.5 rounded-lg hover:bg-white transition-colors"
+            >
+              Add item
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+
+  <script>
+    const TEMPLATE_ID = "{{ tmpl.id if tmpl else '' }}";
+
+    // Item state (title/instructions) tracked locally; saved on blur via PATCH-like POST
+    const itemState = {};
+    {% for item in items %}
+    itemState["{{ item.id }}"] = {
+      title: {{ item.title | tojson }},
+      instructions: {{ (item.instructions or '') | tojson }},
+      required: {{ 'true' if item.required else 'false' }},
+    };
+    {% endfor %}
+
+    function updateItemCount() {
+      const rows = document.querySelectorAll('#items-list > div');
+      const n = rows.length;
+      document.getElementById('item-count').textContent = n + ' item' + (n !== 1 ? 's' : '');
+    }
+
+    async function addItem() {
+      const titleEl = document.getElementById('new-title');
+      const instrEl = document.getElementById('new-instructions');
+      const reqEl   = document.getElementById('new-required');
+      const title = titleEl.value.trim();
+      if (!title) { titleEl.focus(); return; }
+
+      const res = await fetch(`/portal/staff/templates/${TEMPLATE_ID}/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, instructions: instrEl.value.trim(), required: reqEl.checked }),
+      });
+      if (!res.ok) { alert('Failed to add item'); return; }
+      const item = await res.json();
+
+      // Append row to list
+      const list = document.getElementById('items-list');
+      const div = document.createElement('div');
+      div.className = 'px-5 py-3 flex items-start gap-3';
+      div.id = `row-${item.id}`;
+      div.innerHTML = `
+        <div class="flex-1 space-y-1.5">
+          <input type="text" value="${escHtml(item.title)}" placeholder="Document title"
+            class="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-gray-900"
+            onblur="updateItem('${item.id}', this)" data-field="title" />
+          <input type="text" value="${escHtml(item.instructions || '')}" placeholder="Instructions (optional)"
+            class="w-full text-xs border border-gray-100 rounded-lg px-3 py-1.5 text-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-300"
+            onblur="updateItem('${item.id}', this)" data-field="instructions" />
+        </div>
+        <div class="flex items-center gap-3 pt-1.5 flex-shrink-0">
+          <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+            <input type="checkbox" ${item.required ? 'checked' : ''} onchange="updateItemRequired('${item.id}', this)" class="rounded" />
+            Required
+          </label>
+          <button onclick="deleteItem('${TEMPLATE_ID}', '${item.id}')" class="text-xs text-gray-400 hover:text-red-500 transition-colors">Remove</button>
+        </div>`;
+      list.appendChild(div);
+
+      itemState[item.id] = { title: item.title, instructions: item.instructions || '', required: item.required };
+      titleEl.value = '';
+      instrEl.value = '';
+      reqEl.checked = true;
+      titleEl.focus();
+      updateItemCount();
+    }
+
+    function updateItem(itemId, input) {
+      const field = input.dataset.field;
+      if (!itemState[itemId]) itemState[itemId] = {};
+      itemState[itemId][field] = input.value.trim();
+      // Changes are in-memory; the template already reflects them on blur.
+      // A future enhancement could PATCH to the server here.
+    }
+
+    function updateItemRequired(itemId, checkbox) {
+      if (!itemState[itemId]) itemState[itemId] = {};
+      itemState[itemId].required = checkbox.checked;
+    }
+
+    async function deleteItem(templateId, itemId) {
+      if (!confirm('Remove this item?')) return;
+      const res = await fetch(`/portal/staff/templates/${templateId}/items/${itemId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) { alert('Failed to remove item'); return; }
+      const row = document.getElementById(`row-${itemId}`);
+      if (row) row.remove();
+      delete itemState[itemId];
+      updateItemCount();
+    }
+
+    function escHtml(str) {
+      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+  </script>
+</body>
+</html>

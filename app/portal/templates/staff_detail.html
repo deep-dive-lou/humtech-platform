@@ -32,11 +32,11 @@
       </div>
       <div class="flex items-center gap-4">
         <button
-          id="genLinkBtn"
+          id="copyLinkBtn"
           onclick="generateLink()"
           class="text-sm font-medium bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors"
         >
-          Generate magic link
+          Copy link
         </button>
         <a href="/portal/staff/logout" class="text-sm text-gray-500 hover:text-gray-900">Sign out</a>
       </div>
@@ -176,7 +176,7 @@
     const requestId = "{{ req.id }}";
 
     async function generateLink() {
-      const btn = document.getElementById('genLinkBtn');
+      const btn = document.getElementById('copyLinkBtn');
       btn.textContent = 'Generating…';
       btn.disabled = true;
       try {
@@ -190,7 +190,7 @@
         document.getElementById('linkValue').value = data.link;
         document.getElementById('linkModal').classList.remove('hidden');
       } finally {
-        btn.textContent = 'Generate magic link';
+        btn.textContent = 'Copy link';
         btn.disabled = false;
       }
     }

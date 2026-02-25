@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from ..config import settings
-from .auth import get_conn, log_audit
+from .auth import get_conn, get_tenant_brand, log_audit
 from .storage import SPACES_BUCKET, head_object, presign_put
 
 router = APIRouter(prefix="/portal", tags=["portal"])
@@ -192,17 +192,17 @@ async def client_portal_view(
         if not tok:
             return templates.TemplateResponse("client.html", {
                 "request": request, "error": "This link is invalid or has expired.",
-                "req": None, "items": [], "token": token,
+                "req": None, "items": [], "token": token, "brand": {},
             })
         if tok["revoked_at"] is not None:
             return templates.TemplateResponse("client.html", {
                 "request": request, "error": "This link has been revoked.",
-                "req": None, "items": [], "token": token,
+                "req": None, "items": [], "token": token, "brand": {},
             })
         if tok["expires_at"] is not None and tok["expires_at"] < _now_utc():
             return templates.TemplateResponse("client.html", {
                 "request": request, "error": "This link has expired. Please contact your advisor.",
-                "req": None, "items": [], "token": token,
+                "req": None, "items": [], "token": token, "brand": {},
             })
 
         await conn.execute("""
@@ -245,12 +245,14 @@ async def client_portal_view(
             ORDER BY sort_order ASC
         """, tok["request_id"])
 
+    brand = await get_tenant_brand(conn, str(tok["tenant_id"]))
     return templates.TemplateResponse("client.html", {
         "request": request,
         "error": None,
         "req": dict(req),
         "items": [dict(i) for i in items],
         "token": token,
+        "brand": brand,
     })
 
 

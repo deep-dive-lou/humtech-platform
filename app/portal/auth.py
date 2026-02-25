@@ -3,7 +3,7 @@ import bcrypt
 from datetime import datetime, timedelta, timezone
 from typing import AsyncGenerator, Optional
 
-from fastapi import Cookie, Depends
+from fastapi import Cookie, Depends, HTTPException
 from jose import JWTError, jwt
 
 from ..config import settings
@@ -53,17 +53,46 @@ async def get_conn() -> AsyncGenerator[asyncpg.Connection, None]:
 # Staff auth dependency
 # ---------------------------------------------------------------------------
 
-def require_staff(portal_token: Optional[str] = Cookie(default=None)) -> dict:
-    """Decodes JWT cookie. Raises NotAuthenticated if missing/invalid."""
+async def require_staff(
+    portal_token: Optional[str] = Cookie(default=None),
+    conn: asyncpg.Connection = Depends(get_conn),
+) -> dict:
+    """Decodes JWT cookie and fetches current role from DB. Raises NotAuthenticated if missing/invalid."""
     if not portal_token:
         raise NotAuthenticated()
     try:
         payload = jwt.decode(
             portal_token, settings.portal_jwt_secret, algorithms=[_ALGORITHM]
         )
-        return {"staff_id": payload["sub"], "tenant_id": payload["tenant_id"]}
+        staff_id = payload["sub"]
+        tenant_id = payload["tenant_id"]
     except JWTError:
         raise NotAuthenticated()
+
+    row = await conn.fetchrow(
+        "SELECT role FROM portal.staff_users WHERE id = $1::uuid AND is_active = true",
+        staff_id,
+    )
+    if not row:
+        raise NotAuthenticated()
+
+    return {"staff_id": staff_id, "tenant_id": tenant_id, "role": row["role"]}
+
+
+async def require_admin(staff: dict = Depends(require_staff)) -> dict:
+    """Extends require_staff — raises 403 if role is not admin."""
+    if staff["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return staff
+
+
+async def get_tenant_brand(conn: asyncpg.Connection, tenant_id: str) -> dict:
+    """Returns brand settings for the tenant (color, logo, name). Safe to call on every request."""
+    row = await conn.fetchrow(
+        "SELECT brand_color, logo_url, brand_name FROM portal.tenants WHERE id = $1::uuid",
+        tenant_id,
+    )
+    return dict(row) if row else {}
 
 
 # ---------------------------------------------------------------------------

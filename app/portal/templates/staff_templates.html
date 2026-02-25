@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Templates — HumTech Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen">
+
+  <!-- Header -->
+  <div class="bg-white border-b border-gray-200 sticky top-0 z-10">
+    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <a href="/portal/staff/requests" class="text-sm text-gray-400 hover:text-gray-900">Requests</a>
+        <span class="text-gray-200">|</span>
+        <span class="text-sm font-semibold text-gray-900">Templates</span>
+        {% if staff.role == "admin" %}
+        <span class="text-gray-200">|</span>
+        <a href="/portal/staff/settings" class="text-sm text-gray-400 hover:text-gray-900">Settings</a>
+        {% endif %}
+      </div>
+      <div class="flex items-center gap-4">
+        <a
+          href="/portal/staff/templates/new"
+          class="text-sm font-medium bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors"
+        >
+          New Template
+        </a>
+        <a href="/portal/staff/logout" class="text-sm text-gray-500 hover:text-gray-900">Sign out</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="max-w-5xl mx-auto px-6 py-8">
+
+    {% if not tmplts %}
+    <div class="bg-white rounded-xl border border-gray-200 p-10 text-center">
+      <p class="font-medium text-gray-900">No templates yet</p>
+      <p class="text-sm text-gray-400 mt-1">Create a template to reuse checklists across requests.</p>
+      <a href="/portal/staff/templates/new" class="mt-4 inline-block text-sm font-medium bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors">
+        Create first template
+      </a>
+    </div>
+    {% else %}
+    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <h2 class="text-sm font-semibold">Document templates</h2>
+        <span class="text-xs text-gray-400">{{ tmplts | length }} template{{ 's' if tmplts | length != 1 }}</span>
+      </div>
+      <div class="divide-y divide-gray-100">
+        {% for t in tmplts %}
+        <div class="px-5 py-4 flex items-center justify-between">
+          <div>
+            <p class="font-medium text-sm">{{ t.name }}</p>
+            {% if t.description %}
+            <p class="text-xs text-gray-400 mt-0.5">{{ t.description }}</p>
+            {% endif %}
+            <p class="text-xs text-gray-400 mt-1">{{ t.item_count }} item{{ 's' if t.item_count != 1 }}</p>
+          </div>
+          <a
+            href="/portal/staff/templates/{{ t.id }}/edit"
+            class="text-xs font-medium border border-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Edit
+          </a>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+</body>
+</html>
