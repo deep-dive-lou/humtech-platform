@@ -479,7 +479,8 @@ async def book_slot(
         slot_dt = datetime.fromisoformat(slot_iso.replace("Z", "+00:00"))
         if slot_dt.tzinfo is None:
             slot_dt = slot_dt.replace(tzinfo=ZoneInfo("UTC"))
-        end_dt = slot_dt + timedelta(minutes=30)  # Default 30-min appointment
+        slot_duration = int(cal.get("slot_duration_minutes") or 60)
+        end_dt = slot_dt + timedelta(minutes=slot_duration)
 
         body: dict[str, Any] = {
             "calendarId": calendar_id,
