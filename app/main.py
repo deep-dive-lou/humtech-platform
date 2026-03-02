@@ -125,12 +125,9 @@ INSERT INTO bot.job_queue (
 ) RETURNING job_id::text;
 """
 
-LOAD_OUTBOUND_TEXT_SQL = """
+LOAD_OUTBOUND_TEXT_BY_ID_SQL = """
 SELECT text FROM bot.messages
-WHERE conversation_id = $1::uuid
-  AND direction = 'outbound'
-ORDER BY created_at DESC
-LIMIT 1;
+WHERE message_id = $1::uuid;
 """
 
 LOAD_CONVERSATION_ID_SQL = """
@@ -195,11 +192,13 @@ async def debug_bot_simulate(body: SimulateRequest):
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"process_job failed: {e}")
 
-            # Fetch the bot's reply text
-            bot_reply = await conn.fetchval(
-                LOAD_OUTBOUND_TEXT_SQL,
-                result["conversation_id"],
-            )
+            # Fetch the bot's reply text from this specific run
+            bot_reply = None
+            if result.get("out_message_id"):
+                bot_reply = await conn.fetchval(
+                    LOAD_OUTBOUND_TEXT_BY_ID_SQL,
+                    result["out_message_id"],
+                )
 
     return {
         "bot_reply": bot_reply,

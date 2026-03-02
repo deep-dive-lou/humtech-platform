@@ -58,10 +58,14 @@ RETURNING inbound_event_id::text;
 
 INSERT_JOB_SQL = """
 INSERT INTO bot.job_queue (tenant_id, job_type, inbound_event_id, status, run_after)
-VALUES ($1::uuid, 'process_inbound_event', $2::uuid, 'queued', now())
+VALUES ($1::uuid, 'process_inbound_event', $2::uuid, 'queued', now() + ($3::int || ' seconds')::interval)
 ON CONFLICT (job_type, inbound_event_id) DO NOTHING
 RETURNING job_id::text;
 """
+
+# Debounce delay for inbound_message jobs (seconds).
+# new_lead is always instant (0). inbound_message waits to batch rapid-fire texts.
+INBOUND_DEBOUNCE_SECONDS = 3
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -193,8 +197,9 @@ async def inbound_webhook(tenant_slug: str, request: Request) -> Response:
             return Response(content='{"ok":true,"queued":false,"reason":"duplicate"}',
                             media_type="application/json")
 
-        # 4. Enqueue job
-        job_id = await conn.fetchval(INSERT_JOB_SQL, tenant_id, inbound_event_id)
+        # 4. Enqueue job (debounce inbound replies, instant for new_lead)
+        delay = 0 if event_type == "new_lead" else INBOUND_DEBOUNCE_SECONDS
+        job_id = await conn.fetchval(INSERT_JOB_SQL, tenant_id, inbound_event_id, delay)
 
         logger.info(json.dumps({
             "event": "bot_webhook_received",

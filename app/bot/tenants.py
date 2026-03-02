@@ -202,22 +202,40 @@ def get_bot_settings(tenant: dict[str, Any]) -> dict[str, Any]:
 
     Tenant settings.bot structure:
         {
-            "first_touch_template": "Hey{name_part}...",  # optional, uses default if absent
-            "context": "HumTech, a revenue acceleration consultancy",  # injected into LLM prompt
-            "reengagement": {
-                "enabled": true,
-                "delay_hours": 6,
-                "max_attempts": 2
+            "assistant_name": "Ariyah",
+            "business_name": "HumTech",
+            "business_description": "A revenue acceleration consultancy that ...",
+            "call_purpose": "a short discovery call to understand your current setup and see if there's a fit",
+            "call_with": "Chris, our commercial director",
+            "call_duration": "15 minutes",
+            "tone": "Warm, professional, concise. ...",
+            "key_objection_responses": {
+                "what_is_this": "We help businesses ...",
+                "is_this_sales": "It's not a sales pitch ...",
+                "too_busy": "Totally understand ...",
+                "already_have_provider": "No worries ..."
             },
-            "handoff_ghl_user_id": "abc123"  # GHL user to assign conversation to on handoff
+            "context": "HumTech, a revenue acceleration consultancy",
+            "first_touch_template": "Hey{name_part}...",
+            "reengagement": { "enabled": true, "delay_hours": 6, "max_attempts": 2 },
+            "handoff_ghl_user_id": "abc123"
         }
     """
     settings = tenant.get("settings") or {}
     bot = settings.get("bot") or {}
     reengagement = bot.get("reengagement") or {}
+    objections = bot.get("key_objection_responses") or {}
     return {
-        "first_touch_template": bot.get("first_touch_template"),
+        "assistant_name": bot.get("assistant_name", ""),
+        "business_name": bot.get("business_name", ""),
+        "business_description": bot.get("business_description", ""),
+        "call_purpose": bot.get("call_purpose", ""),
+        "call_with": bot.get("call_with", ""),
+        "call_duration": bot.get("call_duration", ""),
+        "tone": bot.get("tone", ""),
+        "key_objection_responses": objections,
         "context": bot.get("context", ""),
+        "first_touch_template": bot.get("first_touch_template"),
         "persona": bot.get("persona", ""),
         "reengagement_enabled": bool(reengagement.get("enabled", True)),
         "reengagement_delay_hours": int(reengagement.get("delay_hours", 6)),

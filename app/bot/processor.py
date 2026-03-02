@@ -1,6 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from typing import Any, Dict, Tuple, Optional
 import asyncpg
 import json
@@ -26,6 +27,7 @@ from app.bot.tenants import (
     get_bot_settings,
 )
 from app.bot.llm import process_inbound_message
+from app.bot.jobs import find_and_claim_siblings, mark_siblings_done
 from app.bot.trace_logger import log_processing_run, build_debug_snapshot
 from app.engine.events import resolve_or_create_lead, write_lead_event
 
@@ -1047,6 +1049,35 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
 
     await conn.execute(UPDATE_CONVERSATION_LAST_INBOUND_SQL, conversation_id)
 
+    # --- Debounce: aggregate rapid-fire messages from same contact ---
+    siblings = await find_and_claim_siblings(conn, ev.tenant_id, job_id, ev.channel_address)
+    if siblings:
+        # Insert sibling messages into conversation history (so nothing is lost)
+        for sib in siblings:
+            sib_text = sib.get("text") or ""
+            if sib_text:
+                await conn.fetchval(
+                    INSERT_INBOUND_MESSAGE_IDEMPOTENT_SQL,
+                    ev.tenant_id,
+                    conversation_id,
+                    contact_id,
+                    sib_text,
+                    ev.provider,
+                    None,  # provider_msg_id — not available from sibling event
+                    ev.channel,
+                    f"agg-{sib['inbound_event_id']}",  # unique dedupe_key
+                    {},  # payload
+                    sib["inbound_event_id"],
+                    "inbound_message",
+                    ev.trace_id,
+                )
+                text = f"{text}\n{sib_text}"  # Concatenate for LLM
+
+        # Mark sibling jobs as done (aggregated into this job)
+        sib_ids = [s["job_id"] for s in siblings]
+        await mark_siblings_done(conn, sib_ids, job_id)
+        print(f"DEBUG debounce: aggregated {len(siblings)} sibling message(s) into job {job_id}")
+
     # State for response generation
     from zoneinfo import ZoneInfo
     tz = ZoneInfo("Europe/London")
@@ -1096,14 +1127,28 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
             conversation_history=conversation_history,
             offered_slots=offered_slots,
             display_slots=display_slots,
-            tenant_context=bot_settings["context"],
+            bot_settings=bot_settings,
             llm_settings=llm_settings,
-            persona=bot_settings.get("persona", ""),
         )
 
         intent = llm_result["intent"]
         route = intent
         out_text = llm_result["reply_text"]
+
+        # LLM preamble — used as prefix for action intents
+        llm_preamble = llm_result["reply_text"].strip()
+
+        # Fallback: if LLM returned no reply_text
+        if not llm_preamble:
+            if intent == "unclear":
+                llm_preamble = "Are you looking to book a time, or did you have a question?"
+            elif intent == "engage":
+                llm_preamble = "What day and time works best for you?"
+            else:
+                llm_preamble = ""
+
+        # For engage/decline/wants_human/unclear: LLM reply IS the full response
+        out_text = llm_preamble
 
         if intent == "reschedule":
             if booked_booking and isinstance(booked_booking.get("slot"), str):
@@ -1115,7 +1160,8 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
                     context_updates["booked_booking"] = None
                     slot_text, new_last_offer = await _handle_offer_slots(conn, ev.tenant_id, _NullRouteInfo())
                     context_updates["last_offer"] = new_last_offer
-                    out_text = f"No problem, I've cancelled your booking! {slot_text}"
+                    _cancel_preamble = llm_preamble or "No problem, I've cancelled your booking!"
+                    out_text = f"{_cancel_preamble} {slot_text}"
                     route = "reschedule_offer"
                 else:
                     out_text = "Sorry, I wasn't able to cancel the existing booking — please contact us directly to reschedule."
@@ -1124,14 +1170,37 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
                 # No existing booking — just offer slots
                 slot_text, new_last_offer = await _handle_offer_slots(conn, ev.tenant_id, _NullRouteInfo())
                 context_updates["last_offer"] = new_last_offer
-                out_text = slot_text
+                _reschedule_preamble = llm_preamble or ""
+                out_text = f"{_reschedule_preamble} {slot_text}".strip()
                 route = "offer_slots"
 
+        elif intent == "cancel":
+            if booked_booking and booked_booking.get("booking_id"):
+                cancel_result = await cancel_booking(
+                    tenant_id=ev.tenant_id,
+                    booking_id=booked_booking["booking_id"],
+                )
+                if cancel_result.get("success"):
+                    context_updates["booked_booking"] = None
+                    _cancel_preamble = llm_preamble or "No problem, your appointment has been cancelled."
+                    out_text = f"{_cancel_preamble} Let me know if you'd like to rebook."
+                    route = "cancelled"
+                else:
+                    out_text = llm_preamble or "Sorry, I wasn't able to cancel the booking — please contact us directly."
+                    route = "cancel_failed"
+            else:
+                out_text = llm_preamble or "It doesn't look like you have an active booking to cancel. Would you like to book a time?"
+                route = "cancel_no_booking"
+
         elif booked_booking and isinstance(booked_booking.get("slot"), str):
-            # Already booked and not a reschedule — idempotent reply
-            slot_display = _format_slot_for_confirmation(booked_booking["slot"])
-            out_text = f"You're already booked in for {slot_display}. See you then!"
-            route = "already_booked"
+            # Already booked — let conversational intents through, block re-booking
+            if intent in ("engage", "wants_human", "decline", "unclear"):
+                pass  # out_text already set from LLM, fall through to handlers below
+            else:
+                # Trying to book again — idempotent reply
+                slot_display = _format_slot_for_confirmation(booked_booking["slot"])
+                out_text = f"You're already booked in for {slot_display}. See you then!"
+                route = "already_booked"
 
         elif intent == "select_slot" and llm_result.get("slot_index") is not None:
             slot_index = llm_result["slot_index"]
@@ -1146,7 +1215,8 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
                     metadata={"source": "chatbot"},
                 )
                 if booking_result.get("success"):
-                    out_text = _build_booking_confirmation(slot_iso, bot_settings["booking_confirmation_template"])
+                    _confirmation = _build_booking_confirmation(slot_iso, bot_settings["booking_confirmation_template"])
+                    out_text = f"{llm_preamble} {_confirmation}".strip() if llm_preamble else _confirmation
                     route = "booked"
                     context_updates["booked_booking"] = {
                         "slot": slot_iso,
@@ -1213,7 +1283,8 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
                         metadata={"source": "chatbot"},
                     )
                     if booking_result.get("success"):
-                        out_text = _build_booking_confirmation(nearest, bot_settings["booking_confirmation_template"])
+                        _confirmation = _build_booking_confirmation(nearest, bot_settings["booking_confirmation_template"])
+                        out_text = f"{llm_preamble} {_confirmation}".strip() if llm_preamble else _confirmation
                         route = "booked"
                         context_updates["booked_booking"] = {
                             "slot": nearest,
@@ -1239,9 +1310,10 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
                     display_alts = format_slots_for_display(alts, timezone=tz_str)
                     if display_alts:
                         if len(display_alts) >= 2:
-                            out_text = f"I don't have {explicit_time} I'm afraid. Nearest I've got is {display_alts[0]} or {display_alts[1]} — would either of those work?"
+                            _alt_offer = f"I don't have {explicit_time} I'm afraid. Nearest I've got is {display_alts[0]} or {display_alts[1]} — would either of those work?"
                         else:
-                            out_text = f"I don't have {explicit_time} I'm afraid. Nearest I've got is {display_alts[0]} — does that work?"
+                            _alt_offer = f"I don't have {explicit_time} I'm afraid. Nearest I've got is {display_alts[0]} — does that work?"
+                        out_text = f"{llm_preamble} {_alt_offer}".strip() if llm_preamble else _alt_offer
                         new_last_offer = {"offered_slots": alts, "offered_at": now.isoformat(), "timezone": tz_str}
                         context_updates["last_offer"] = new_last_offer
                     else:
@@ -1258,9 +1330,10 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
                     class _FallbackRouteInfo:
                         route = "offer_slots"
                         signals = _FallbackSignals()
-                    out_text, new_last_offer = await _handle_offer_slots(conn, ev.tenant_id, _FallbackRouteInfo())
+                    _slot_text, new_last_offer = await _handle_offer_slots(conn, ev.tenant_id, _FallbackRouteInfo())
                 else:
-                    out_text, new_last_offer = await _handle_offer_slots(conn, ev.tenant_id, _NullRouteInfo())
+                    _slot_text, new_last_offer = await _handle_offer_slots(conn, ev.tenant_id, _NullRouteInfo())
+                out_text = f"{llm_preamble} {_slot_text}".strip() if llm_preamble else _slot_text
                 context_updates["last_offer"] = new_last_offer
                 route = "offer_slots"
 
@@ -1301,7 +1374,7 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
                 _pm_check_day = None
             _check_day = preferred_day or _pm_check_day
             _check_date = getattr(route_info.signals, "explicit_date", None)
-            preamble = ""
+            day_preamble = ""
             if (_check_day or _check_date) and new_last_offer.get("offered_slots"):
                 offer_tz = new_last_offer.get("timezone", "Europe/London")
                 _tz = ZoneInfo(offer_tz)
@@ -1319,12 +1392,14 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
                 date_matched = (_check_date is None) or (_check_date in slot_dates)
                 if not day_matched or not date_matched:
                     if _check_day and _check_date:
-                        preamble = f"I don't have anything on {_check_day.capitalize()} the {_ordinal(_check_date)} I'm afraid —"
+                        day_preamble = f"I don't have anything on {_check_day.capitalize()} the {_ordinal(_check_date)} I'm afraid —"
                     elif _check_day:
-                        preamble = f"I don't have anything on {_check_day.capitalize()} I'm afraid —"
+                        day_preamble = f"I don't have anything on {_check_day.capitalize()} I'm afraid —"
                     elif _check_date:
-                        preamble = f"I don't have anything on the {_ordinal(_check_date)} I'm afraid —"
-            out_text = f"{preamble} {slot_text}".strip() if preamble else slot_text
+                        day_preamble = f"I don't have anything on the {_ordinal(_check_date)} I'm afraid —"
+            # Combine: LLM preamble + day mismatch preamble + slot offer
+            _combined_preamble = " ".join(p for p in [llm_preamble, day_preamble] if p).strip()
+            out_text = f"{_combined_preamble} {slot_text}".strip() if _combined_preamble else slot_text
 
         elif intent == "wants_human" and llm_result.get("should_handoff"):
             # Handoff requested — bot steps back, human takes over
@@ -1336,7 +1411,12 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
             context_updates["declined"] = {"at": now.isoformat()}
             route = "decline"
 
-        # else intent == "unclear" — LLM reply_text already set (may be empty → bot goes silent)
+        elif intent == "engage":
+            # LLM composed a full reply addressing the lead's question/objection
+            # out_text is already set from llm_preamble
+            route = "engage"
+
+        # else intent == "unclear" — LLM reply_text already set as clarifying question
 
     # Store context updates if any
     if context_updates:
