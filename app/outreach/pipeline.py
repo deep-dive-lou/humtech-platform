@@ -114,14 +114,18 @@ async def _search_target_orgs(config: dict[str, Any] | None = None) -> list[str]
             data = resp.json()
             orgs = data.get("organizations", []) or data.get("accounts", [])
             logger.info("Apollo org search: raw response has %d orgs", len(orgs))
+            nonprofit_tlds = (".org", ".org.uk", ".charity", ".ngo")
             for org in orgs:
                 domain = org.get("primary_domain") or org.get("domain", "")
                 name = org.get("name", "?")
-                if domain:
-                    domains.append(domain)
-                    logger.info("  Org: %s (%s)", name, domain)
-                else:
+                if not domain:
                     logger.info("  Org (no domain): %s", name)
+                    continue
+                if any(domain.endswith(tld) for tld in nonprofit_tlds):
+                    logger.info("  Skipped non-profit: %s (%s)", name, domain)
+                    continue
+                domains.append(domain)
+                logger.info("  Org: %s (%s)", name, domain)
             logger.info("Apollo org search: found %d target orgs with domains", len(domains))
         except Exception as e:
             logger.error("Apollo org search failed: %s", e)
