@@ -89,7 +89,7 @@ async def source_leads(config: dict[str, Any] | None = None, limit: int = 150) -
     async with httpx.AsyncClient(timeout=20) as client:
         try:
             resp = await client.post(
-                "https://api.apollo.io/api/v1/mixed_people/search",
+                "https://api.apollo.io/api/v1/mixed_people/api_search",
                 json=payload,
                 headers={"Content-Type": "application/json", "X-Api-Key": settings.apollo_api_key},
             )
