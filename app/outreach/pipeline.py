@@ -549,12 +549,25 @@ async def run_pipeline(batch_date: Optional[date] = None) -> dict[str, Any]:
         logger.warning("Pipeline: no prospects sourced")
         return stats
 
+    # Filter out prospects with no first_name before spending reveal credits
+    search_results = [p for p in search_results if p.get("first_name")]
+    if not search_results:
+        logger.warning("Pipeline: no valid prospects after name filter")
+        return stats
+
     # Step 3: Reveal full contact details (email, last name, linkedin, domain)
     prospects = await _reveal_contacts(search_results)
 
     if not prospects:
         logger.warning("Pipeline: no contacts revealed")
         return stats
+
+    # Filter out reveals with no email (Apollo couldn't find a verified address)
+    before_count = len(prospects)
+    prospects = [p for p in prospects if p.get("email")]
+    dropped = before_count - len(prospects)
+    if dropped:
+        logger.info("Dropped %d prospects with no email after reveal", dropped)
 
     pool = await get_pool()
 
@@ -568,11 +581,6 @@ async def run_pipeline(batch_date: Optional[date] = None) -> dict[str, Any]:
 
     for person in prospects:
         lead = _parse_apollo_person(person)
-
-        if not lead["email"] or not lead["first_name"]:
-            logger.warning("Skipping lead — missing email or name: %s", {k: lead.get(k) for k in ("email", "first_name", "company")})
-            stats["errors"] += 1
-            continue
 
         domain = lead.get("company_domain")
         company_key = domain or _normalise_company(lead.get("company", ""))
