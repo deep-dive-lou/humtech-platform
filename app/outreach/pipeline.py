@@ -113,10 +113,15 @@ async def _search_target_orgs(config: dict[str, Any] | None = None) -> list[str]
             resp.raise_for_status()
             data = resp.json()
             orgs = data.get("organizations", []) or data.get("accounts", [])
+            logger.info("Apollo org search: raw response has %d orgs", len(orgs))
             for org in orgs:
                 domain = org.get("primary_domain") or org.get("domain", "")
+                name = org.get("name", "?")
                 if domain:
                     domains.append(domain)
+                    logger.info("  Org: %s (%s)", name, domain)
+                else:
+                    logger.info("  Org (no domain): %s", name)
             logger.info("Apollo org search: found %d target orgs with domains", len(domains))
         except Exception as e:
             logger.error("Apollo org search failed: %s", e)

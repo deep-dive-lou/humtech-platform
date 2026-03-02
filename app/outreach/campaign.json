@@ -11,9 +11,7 @@
     "organization_search": {
       "q_organization_keyword_tags": ["debt management", "debt consolidation", "debt advice", "debt solutions", "IVA", "debt recovery"],
       "organization_locations": ["United Kingdom"],
-      "organization_num_employees_ranges": ["11,500"],
-      "organization_industries": ["financial services"],
-      "organization_revenue_ranges": ["1000000,50000000"]
+      "organization_num_employees_ranges": ["11,500"]
     }
   },
   "personalisation": {
