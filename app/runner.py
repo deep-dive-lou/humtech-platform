@@ -1,7 +1,8 @@
 """
-Always-on worker runner with two concurrent loops:
+Always-on worker runner with three concurrent loops:
 1) process_loop: claim/process jobs from bot.job_queue
 2) send_loop: send pending outbound messages from bot.messages
+3) monitor_loop: periodic conversation health checks + Slack alerts
 
 Usage:
   python -m app.runner
@@ -21,6 +22,7 @@ from app.db import init_db_pool, close_db_pool, get_pool
 from app.bot.jobs import claim_jobs, mark_done, mark_retry
 from app.bot.processor import process_job
 from app.bot.sender import send_pending_outbound
+from app.bot.monitor import run_monitor_check
 
 # Logging setup
 logging.basicConfig(
@@ -159,6 +161,35 @@ async def send_loop() -> None:
     logger.info("send_loop shutting down")
 
 
+async def monitor_loop() -> None:
+    """Periodically check conversation health and post alerts to Slack."""
+    global _shutdown_event
+    assert _shutdown_event is not None
+
+    webhook_url = settings.slack_webhook_url
+    if not webhook_url:
+        logger.info("monitor_loop skipped: SLACK_WEBHOOK_URL not set")
+        return
+
+    interval = settings.monitor_interval_seconds
+    logger.info("monitor_loop started (interval %ds)", interval)
+
+    while not _shutdown_event.is_set():
+        try:
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                await run_monitor_check(conn, webhook_url)
+        except Exception as e:
+            logger.error("monitor_loop error: %s", e)
+
+        try:
+            await asyncio.wait_for(_shutdown_event.wait(), timeout=float(interval))
+        except asyncio.TimeoutError:
+            pass
+
+    logger.info("monitor_loop shutting down")
+
+
 def _handle_shutdown(signum, frame) -> None:
     """Signal handler for graceful shutdown."""
     global _shutdown_event
@@ -184,10 +215,11 @@ async def main() -> None:
     logger.info("Database pool initialized")
 
     try:
-        # Run both loops concurrently
+        # Run all loops concurrently
         await asyncio.gather(
             process_loop(),
             send_loop(),
+            monitor_loop(),
         )
     finally:
         logger.info("Closing database pool...")

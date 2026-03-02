@@ -28,4 +28,8 @@ class Settings:
     spaces_secret: str = os.getenv("SPACES_SECRET", "")
     portal_jwt_secret: str = os.getenv("PORTAL_JWT_SECRET", "dev-secret-change-in-prod")
 
+    # Monitoring
+    slack_webhook_url: str = os.getenv("SLACK_WEBHOOK_URL", "")
+    monitor_interval_seconds: int = int(os.getenv("MONITOR_INTERVAL_SECONDS", "300"))
+
 settings = Settings()
