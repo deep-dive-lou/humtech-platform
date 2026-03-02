@@ -1,5 +1,5 @@
 {
-  "campaign_name": "financial-services-q1-2026",
+  "campaign_name": "debt-management-q1-2026",
   "instantly_campaign_id": "76fc48b8-aa92-426e-8291-212fa3b4ee39",
   "apollo": {
     "person_titles": [
@@ -9,18 +9,19 @@
     ],
     "person_seniorities": ["owner", "founder", "c_suite", "vp", "director"],
     "organization_locations": ["United Kingdom"],
-    "organization_num_employees_ranges": ["50,500"],
+    "organization_num_employees_ranges": ["11,500"],
     "organization_industries": ["financial services"],
-    "organization_revenue_ranges": ["5000000,50000000"],
+    "organization_keywords": ["debt management", "debt consolidation", "debt advice", "debt solutions", "IVA", "debt recovery"],
+    "organization_revenue_ranges": ["1000000,50000000"],
     "contact_email_status_v2": ["verified", "likely to engage"]
   },
   "personalisation": {
-    "template_context": "HumTech offers a done-for-you AI Revenue Engine for financial services firms — AI booking bot, speed-to-lead automation, sales process improvement, and full ad management. They only get paid when revenue goes up.",
+    "template_context": "HumTech offers a done-for-you AI Revenue Engine for debt management and consolidation firms — AI booking bot that converts enquiries into consultations, speed-to-lead automation so no enquiry goes cold, sales process improvement, and full ad management. They only get paid when revenue goes up.",
     "sector_hints": {
-      "type_of_company": "financial services firms",
-      "ref_service": "financial advice",
-      "reference_outcome": "becoming clients",
-      "industry_name": "financial services"
+      "type_of_company": "debt management and consolidation firms",
+      "ref_service": "debt advice and consolidation",
+      "reference_outcome": "booking consultations and becoming clients",
+      "industry_name": "debt management"
     }
   },
   "limits": {

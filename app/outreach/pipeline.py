@@ -44,6 +44,14 @@ APOLLO_SENIORITIES = ["owner", "founder", "c_suite", "vp", "director"]
 
 CAMPAIGN_CONFIG_PATH = Path(__file__).parent / "campaign.json"
 
+_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
+
+
+def _extract_json(text: str) -> str:
+    """Strip markdown code fences from LLM output before JSON parsing."""
+    m = _JSON_FENCE_RE.search(text)
+    return m.group(1).strip() if m else text.strip()
+
 
 def load_campaign_config() -> dict[str, Any]:
     """Load active campaign config. Falls back to empty dict if missing/invalid."""
@@ -322,7 +330,7 @@ async def _analyse_website(domain: str) -> dict[str, Any]:
                 ),
             }],
         )
-        return json.loads(msg.content[0].text)
+        return json.loads(_extract_json(msg.content[0].text))
     except Exception as e:
         logger.warning("Website analysis failed for %s: %s", domain, e)
         return {}
@@ -430,7 +438,7 @@ Truth rules — non-negotiable:
             max_tokens=500,
             messages=[{"role": "user", "content": prompt}],
         )
-        result = json.loads(msg.content[0].text)
+        result = json.loads(_extract_json(msg.content[0].text))
         result.setdefault("evidence_used", [])
         result.setdefault("risk_flags", [])
         result.setdefault("rung", 1)
