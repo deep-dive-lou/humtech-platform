@@ -82,6 +82,68 @@ async def remove_lead(personalisation_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Preview & test send
+# ---------------------------------------------------------------------------
+
+@router.get("/preview-send")
+async def preview_send(batch_date: Optional[str] = None):
+    """Show the exact payload that would be sent to Instantly — without sending."""
+    today = date.fromisoformat(batch_date) if batch_date else date.today()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        leads = await models.get_sendable_leads(conn, today)
+
+    if not leads:
+        return {"ok": True, "leads": [], "message": "No sendable leads for this date"}
+
+    instantly_leads = [
+        {
+            "email": lead["email"],
+            "first_name": lead.get("first_name", ""),
+            "last_name": lead.get("last_name", ""),
+            "company_name": lead.get("company", ""),
+            "website": lead.get("company_domain", ""),
+            "personalization": lead["opener"],
+        }
+        for lead in leads
+    ]
+
+    config = load_campaign_config()
+    return {
+        "ok": True,
+        "campaign_id": config.get("instantly_campaign_id"),
+        "count": len(instantly_leads),
+        "leads": instantly_leads,
+    }
+
+
+class TestSendRequest(BaseModel):
+    test_email: str
+
+
+@router.post("/test-send")
+async def test_send(body: TestSendRequest, batch_date: Optional[str] = None):
+    """Send the first lead to a test email so you can see the rendered email."""
+    today = date.fromisoformat(batch_date) if batch_date else date.today()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        leads = await models.get_sendable_leads(conn, today)
+
+    if not leads:
+        return {"ok": True, "sent": 0, "message": "No sendable leads for this date"}
+
+    # Take just the first lead, override email
+    test_lead = dict(leads[0])
+    test_lead["email"] = body.test_email
+
+    config = load_campaign_config()
+    campaign_id = config.get("instantly_campaign_id")
+    result = await push_to_instantly([test_lead], campaign_id=campaign_id)
+
+    return {"ok": True, "test_email": body.test_email, **result}
+
+
+# ---------------------------------------------------------------------------
 # Send batch
 # ---------------------------------------------------------------------------
 
