@@ -186,53 +186,53 @@ async def _check_job_backup(conn) -> list[dict]:
 
 # ── Slack posting ────────────────────────────────────────────────────
 
-def _build_slack_blocks(sections: dict[str, list[dict]]) -> list[dict]:
-    """Build Slack Block Kit blocks from alert sections."""
-    blocks: list[dict] = []
+MAX_ITEMS_PER_SECTION = 5
 
+
+def _build_slack_message(sections: dict[str, list[dict]]) -> str:
+    """Build a plain mrkdwn message from alert sections."""
     label_map = {
-        "high_turns": ":warning: High Turn Count (no booking)",
-        "wants_human": ":raised_hand: Wants Human (unactioned)",
-        "failed_sends": ":x: Failed Message Sends",
-        "repeated_unclear": ":question: Repeated Unclear Intents",
-        "stalled": ":hourglass: Stalled Conversations",
-        "job_backup": ":rotating_light: Job Queue Backup",
+        "high_turns": ":warning: *High Turn Count (no booking)*",
+        "wants_human": ":raised_hand: *Wants Human (unactioned)*",
+        "failed_sends": ":x: *Failed Message Sends*",
+        "repeated_unclear": ":question: *Repeated Unclear Intents*",
+        "stalled": ":hourglass: *Stalled Conversations*",
+        "job_backup": ":rotating_light: *Job Queue Backup*",
     }
 
+    parts: list[str] = []
     for section_key, items in sections.items():
         if not items:
             continue
         label = label_map.get(section_key, section_key)
-        blocks.append({"type": "header", "text": {"type": "plain_text", "text": label}})
+        lines = [label]
+        shown = items[:MAX_ITEMS_PER_SECTION]
+        overflow = len(items) - len(shown)
 
-        lines = []
-        for item in items:
+        for item in shown:
             if section_key == "high_turns":
-                lines.append(f"- *{item['name']}* -- {item['turns']} turns, last intent: {item['intent']}")
+                lines.append(f"  - {item['name']} -- {item['turns']} turns, last intent: {item['intent']}")
             elif section_key == "wants_human":
-                lines.append(f"- *{item['name']}* -- waiting {item['waiting_mins']} min")
+                lines.append(f"  - {item['name']} -- waiting {item['waiting_mins']} min")
             elif section_key == "failed_sends":
-                lines.append(f"- *{item['name']}* -- {item['error']}")
+                lines.append(f"  - {item['name']} -- {item['error']}")
             elif section_key == "repeated_unclear":
-                lines.append(f"- *{item['name']}* -- 3+ unclear in a row")
+                lines.append(f"  - {item['name']} -- 3+ unclear in a row")
             elif section_key == "stalled":
-                lines.append(f"- *{item['name']}* -- {item['hours_waiting']}h since last message")
+                lines.append(f"  - {item['name']} -- {item['hours_waiting']}h since last message")
             elif section_key == "job_backup":
-                lines.append(f"- {item['stuck_count']} jobs stuck in queue")
+                lines.append(f"  - {item['stuck_count']} jobs stuck in queue")
 
-        blocks.append({
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": "\n".join(lines)},
-        })
+        if overflow > 0:
+            lines.append(f"  _...and {overflow} more_")
 
-    return blocks
+        parts.append("\n".join(lines))
+
+    return "\n\n".join(parts)
 
 
-async def _post_to_slack(webhook_url: str, blocks: list[dict]) -> None:
-    payload = {
-        "text": "Bot Monitor Alert",
-        "blocks": blocks,
-    }
+async def _post_to_slack(webhook_url: str, text: str) -> None:
+    payload = {"text": text}
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(webhook_url, json=payload)
@@ -258,8 +258,8 @@ async def run_monitor_check(conn, slack_webhook_url: str) -> int:
     total = sum(len(v) for v in sections.values())
 
     if total > 0:
-        blocks = _build_slack_blocks(sections)
-        await _post_to_slack(slack_webhook_url, blocks)
+        text = _build_slack_message(sections)
+        await _post_to_slack(slack_webhook_url, text)
         logger.info("Monitor: %d alerts posted to Slack", total)
     else:
         logger.debug("Monitor: all clear")
