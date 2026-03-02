@@ -522,7 +522,9 @@ async def run_pipeline(batch_date: Optional[date] = None) -> dict[str, Any]:
     """
     config = load_campaign_config()
     today = batch_date or date.today()
-    lead_limit = config.get("limits", {}).get("leads_per_run", 150)
+    lead_target = config.get("limits", {}).get("leads_per_run", 40)
+    # Over-source by 50% to compensate for no-email + dedup losses
+    lead_limit = int(lead_target * 1.5)
 
     stats = {
         "batch_date": today.isoformat(),
@@ -584,6 +586,11 @@ async def run_pipeline(batch_date: Optional[date] = None) -> dict[str, Any]:
     logger.info("Pre-loaded %d existing company domains for dedup", len(seen_companies))
 
     for person in prospects:
+        # Stop once we've hit the target
+        if stats["enriched"] >= lead_target:
+            logger.info("Hit target of %d leads — stopping", lead_target)
+            break
+
         lead = _parse_apollo_person(person)
 
         domain = lead.get("company_domain")
