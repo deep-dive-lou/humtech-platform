@@ -115,38 +115,46 @@ async def _search_target_orgs(config: dict[str, Any] | None = None) -> list[str]
         logger.warning("No apollo.organization_search config — skipping org search")
         return []
 
-    payload = {**os_config, "per_page": 100, "page": 1}
-
-    logger.info("Apollo org search filters: %s", {k: v for k, v in payload.items() if k not in ("per_page", "page")})
+    logger.info("Apollo org search filters: %s", {k: v for k, v in os_config.items()})
 
     domains: list[str] = []
-    async with httpx.AsyncClient(timeout=30) as client:
-        try:
-            resp = await client.post(
-                "https://api.apollo.io/api/v1/mixed_companies/search",
-                json=payload,
-                headers={"Content-Type": "application/json", "X-Api-Key": settings.apollo_api_key},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            orgs = data.get("organizations", []) or data.get("accounts", [])
-            logger.info("Apollo org search: raw response has %d orgs", len(orgs))
-            nonprofit_tlds = (".org", ".org.uk", ".charity", ".ngo")
-            for org in orgs:
-                domain = org.get("primary_domain") or org.get("domain", "")
-                name = org.get("name", "?")
-                if not domain:
-                    logger.info("  Org (no domain): %s", name)
-                    continue
-                if any(domain.endswith(tld) for tld in nonprofit_tlds):
-                    logger.info("  Skipped non-profit: %s (%s)", name, domain)
-                    continue
-                domains.append(domain)
-                logger.info("  Org: %s (%s)", name, domain)
-            logger.info("Apollo org search: found %d target orgs with domains", len(domains))
-        except Exception as e:
-            logger.error("Apollo org search failed: %s", e)
+    nonprofit_tlds = (".org", ".org.uk", ".charity", ".ngo")
+    page = 1
+    max_pages = 5  # up to 500 orgs
 
+    async with httpx.AsyncClient(timeout=30) as client:
+        while page <= max_pages:
+            payload = {**os_config, "per_page": 100, "page": page}
+            try:
+                resp = await client.post(
+                    "https://api.apollo.io/api/v1/mixed_companies/search",
+                    json=payload,
+                    headers={"Content-Type": "application/json", "X-Api-Key": settings.apollo_api_key},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                orgs = data.get("organizations", []) or data.get("accounts", [])
+                if not orgs:
+                    logger.info("Apollo org search: no more results at page %d", page)
+                    break
+                logger.info("Apollo org search: page %d returned %d orgs", page, len(orgs))
+                for org in orgs:
+                    domain = org.get("primary_domain") or org.get("domain", "")
+                    name = org.get("name", "?")
+                    if not domain:
+                        continue
+                    if any(domain.endswith(tld) for tld in nonprofit_tlds):
+                        logger.info("  Skipped non-profit: %s (%s)", name, domain)
+                        continue
+                    domains.append(domain)
+                if len(orgs) < 100:
+                    break  # last page
+                page += 1
+            except Exception as e:
+                logger.error("Apollo org search failed on page %d: %s", page, e)
+                break
+
+    logger.info("Apollo org search: found %d target orgs with domains (across %d pages)", len(domains), page)
     return domains
 
 
