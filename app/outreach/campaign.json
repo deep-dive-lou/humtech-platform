@@ -9,7 +9,7 @@
     ],
     "person_seniorities": ["owner", "founder", "c_suite", "vp", "director"],
     "organization_search": {
-      "q_organization_keyword_tags": ["debt management", "debt consolidation", "debt advice", "debt solutions", "IVA", "debt recovery"],
+      "q_organization_keyword_tags": ["debt management", "debt consolidation", "debt advice", "debt solutions", "IVA", "debt recovery", "insolvency", "credit repair", "debt counselling", "DMP", "debt relief", "individual voluntary arrangement", "trust deed", "bankruptcy advice"],
       "organization_locations": ["United Kingdom"],
       "organization_num_employees_ranges": ["11,500"]
     }
