@@ -5,36 +5,48 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Outreach Review — {{ batch_date }}</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: { DEFAULT: '#122845', dark: '#061528', light: '#1a3a5c' },
+            brand: { yellow: '#D8B743', blue: '#3DB2DD' },
+          }
+        }
+      }
+    }
+  </script>
   <style>
     .lead-item { transition: background-color 0.1s; }
-    .lead-item.active { background-color: #f3f4f6; border-left: 3px solid #111827; }
+    .lead-item.active { background-color: rgba(18,40,69,0.08); border-left: 3px solid #122845; }
     .lead-item:not(.active) { border-left: 3px solid transparent; }
   </style>
 </head>
 <body class="bg-white text-gray-900 h-screen flex flex-col overflow-hidden">
 
   <!-- Header -->
-  <div class="bg-white border-b border-gray-200 shrink-0">
+  <div class="bg-navy text-white shrink-0">
     <div class="px-6 py-3 flex items-center justify-between">
       <div class="flex items-center gap-4">
-        <h1 class="text-lg font-semibold">Outreach</h1>
+        <h1 class="text-lg font-semibold text-white">Outreach</h1>
         <div class="flex items-center gap-2 text-sm">
           <a href="/outreach/review?batch_date={{ prev_date }}"
-             class="text-gray-400 hover:text-gray-700 px-1">&larr;</a>
-          <span class="text-gray-600 font-medium">{{ batch_date }}</span>
+             class="text-white/50 hover:text-white px-1">&larr;</a>
+          <span class="text-white/80 font-medium">{{ batch_date }}</span>
           <a href="/outreach/review?batch_date={{ next_date }}"
-             class="text-gray-400 hover:text-gray-700 px-1">&rarr;</a>
+             class="text-white/50 hover:text-white px-1">&rarr;</a>
           {% if batch_date_iso != today_iso %}
-          <a href="/outreach/review" class="text-xs text-blue-500 hover:text-blue-700 ml-1">Today</a>
+          <a href="/outreach/review" class="text-xs text-brand-yellow hover:text-brand-yellow/80 ml-1">Today</a>
           {% endif %}
         </div>
       </div>
       <div class="flex items-center gap-4">
-        <span class="text-sm text-gray-500">{{ leads|length }} leads</span>
+        <span class="text-sm text-white/60">{{ leads|length }} leads</span>
         <button
           id="send-btn"
           onclick="sendBatch()"
-          class="bg-gray-900 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-gray-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          class="bg-brand-yellow text-navy-dark text-sm font-semibold px-4 py-2 rounded-lg hover:bg-brand-yellow/90 transition disabled:opacity-40 disabled:cursor-not-allowed"
           {% if not leads %}disabled{% endif %}
         >
           Send {{ leads|length }} &rarr;
@@ -99,11 +111,11 @@
           </div>
           <div id="detail-edit" class="hidden mt-2">
             <textarea id="detail-textarea"
-              class="w-full text-sm text-gray-700 leading-relaxed border border-gray-300 rounded-lg p-4 resize-y focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+              class="w-full text-sm text-gray-700 leading-relaxed border border-gray-300 rounded-lg p-4 resize-y focus:outline-none focus:ring-2 focus:ring-navy/30 focus:border-navy/50"
               rows="8"></textarea>
             <div class="flex gap-2 mt-2">
               <button onclick="saveEdit()"
-                      class="text-sm bg-gray-900 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition">Save</button>
+                      class="text-sm bg-navy text-white px-4 py-2 rounded-md hover:bg-navy-light transition">Save</button>
               <button onclick="cancelEdit()"
                       class="text-sm text-gray-500 px-4 py-2 rounded-md hover:bg-gray-100 transition">Cancel</button>
             </div>
@@ -123,7 +135,7 @@
   </div>
 
   <!-- Toast -->
-  <div id="toast" class="fixed bottom-6 right-6 bg-gray-900 text-white text-sm px-4 py-3 rounded-lg shadow-lg hidden transition-all">
+  <div id="toast" class="fixed bottom-6 right-6 bg-navy text-white text-sm px-4 py-3 rounded-lg shadow-lg hidden transition-all">
     <span id="toast-msg"></span>
   </div>
 
@@ -257,7 +269,7 @@
   function toast(msg, error = false) {
     const el = document.getElementById('toast');
     document.getElementById('toast-msg').textContent = msg;
-    el.className = `fixed bottom-6 right-6 text-sm px-4 py-3 rounded-lg shadow-lg transition-all ${error ? 'bg-red-600' : 'bg-gray-900'} text-white`;
+    el.className = `fixed bottom-6 right-6 text-sm px-4 py-3 rounded-lg shadow-lg transition-all ${error ? 'bg-red-600' : 'bg-navy'} text-white`;
     el.classList.remove('hidden');
     setTimeout(() => el.classList.add('hidden'), 3000);
   }
