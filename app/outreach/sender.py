@@ -43,10 +43,8 @@ async def push_to_instantly(leads: list[dict[str, Any]], campaign_id: str | None
                 "last_name": lead.get("last_name", ""),
                 "company_name": lead.get("company", ""),
                 "website": lead.get("company_domain", ""),
+                "personalization": lead["opener"],
                 "campaign": effective_campaign_id,
-                "custom_variables": {
-                    "personalization": lead["opener"],
-                },
             }
             try:
                 resp = await client.post(INSTANTLY_API_V2_URL, json=payload, headers=headers)
