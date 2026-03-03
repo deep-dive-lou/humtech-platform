@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import date, timedelta
+from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
@@ -36,7 +37,15 @@ async def review_page(request: Request, batch_date: Optional[str] = None):
         leads = await models.get_batch(conn, today)
         counts = await models.get_batch_counts(conn, today)
 
-    all_leads = [l for l in leads if l["review_status"] in ("needs_review", "auto_send")]
+    all_leads = []
+    for l in leads:
+        if l["review_status"] not in ("needs_review", "auto_send"):
+            continue
+        row = dict(l)
+        for k, v in row.items():
+            if isinstance(v, Decimal):
+                row[k] = float(v)
+        all_leads.append(row)
 
     return templates.TemplateResponse("review.html", {
         "request": request,
