@@ -59,9 +59,13 @@ def _to_float(value: Any) -> Optional[float]:
         return None
 
 
-def _normalise(opp: dict[str, Any]) -> NormalisedOpportunity:
-    stage = opp.get("stage") or {}
-    stage_name = stage.get("name") if isinstance(stage, dict) else opp.get("pipelineStage")
+def _normalise(opp: dict[str, Any], stage_id_map: dict[str, str] | None = None) -> NormalisedOpportunity:
+    # Resolve stage name: try stage_id_map first, then nested stage.name, then pipelineStage
+    stage_id = opp.get("pipelineStageId") or opp.get("pipelineStageUId")
+    stage_name = (stage_id_map or {}).get(stage_id) if stage_id else None
+    if not stage_name:
+        stage = opp.get("stage") or {}
+        stage_name = stage.get("name") if isinstance(stage, dict) else opp.get("pipelineStage")
 
     contact = opp.get("contact") or {}
     contact_id = contact.get("id") if isinstance(contact, dict) else None
@@ -84,6 +88,29 @@ def _normalise(opp: dict[str, Any]) -> NormalisedOpportunity:
     )
 
 
+async def _fetch_stage_id_map(
+    client: httpx.AsyncClient,
+    headers: dict[str, str],
+    location_id: str,
+) -> dict[str, str]:
+    """Fetch pipeline definitions and build stage_id → stage_name lookup."""
+    resp = await client.get(
+        f"{GHL_API_BASE}/opportunities/pipelines",
+        headers=headers,
+        params={"locationId": location_id},
+    )
+    if resp.status_code != 200:
+        logger.warning("Failed to fetch pipelines: %s", resp.status_code)
+        return {}
+
+    stage_map: dict[str, str] = {}
+    for pipeline in resp.json().get("pipelines", []):
+        for stage in pipeline.get("stages", []):
+            stage_map[stage["id"]] = stage["name"].strip()
+    logger.info("Loaded %d pipeline stages for stage ID resolution.", len(stage_map))
+    return stage_map
+
+
 async def fetch_all_opportunities(
     token: str,
     location_id: str,
@@ -101,17 +128,24 @@ async def fetch_all_opportunities(
     }
 
     results: list[NormalisedOpportunity] = []
-    cursor: Optional[str] = None
+    seen_ids: set[str] = set()
+    start_after: Optional[str] = None
+    start_after_id: Optional[str] = None
     page = 0
 
     async with httpx.AsyncClient(timeout=30.0) as client:
+        # Pre-fetch pipeline stage ID→name mapping
+        stage_id_map = await _fetch_stage_id_map(client, headers, location_id)
+
         while True:
             params: dict[str, Any] = {
                 "location_id": location_id,
                 "limit": PAGE_LIMIT,
             }
-            if cursor:
-                params["startAfter"] = cursor
+            if start_after:
+                params["startAfter"] = start_after
+            if start_after_id:
+                params["startAfterId"] = start_after_id
 
             resp = await client.get(
                 f"{GHL_API_BASE}/opportunities/search",
@@ -128,19 +162,35 @@ async def fetch_all_opportunities(
             opportunities = data.get("opportunities") or data.get("data") or []
             meta = data.get("meta") or {}
 
-            batch = [_normalise(o) for o in opportunities]
+            # Deduplicate within this fetch — GHL cursor can repeat
+            new_opps = [o for o in opportunities if o.get("id") not in seen_ids]
+            if not new_opps:
+                logger.info("No new opportunities on page %d — pagination complete.", page + 1)
+                break
+
+            for o in new_opps:
+                seen_ids.add(o["id"])
+
+            batch = [_normalise(o, stage_id_map) for o in new_opps]
             results.extend(batch)
             page += 1
 
             logger.info(
-                "Fetched page %d: %d opportunities (total so far: %d)",
+                "Fetched page %d: %d new opportunities (total so far: %d)",
                 page, len(batch), len(results),
             )
 
-            next_cursor = meta.get("nextPageCursor") or meta.get("startAfter")
-            if not next_cursor or not batch:
+            next_start_after = meta.get("nextPageCursor") or meta.get("startAfter")
+            next_start_after_id = meta.get("startAfterId")
+            if not next_start_after or not opportunities:
                 break
 
-            cursor = next_cursor
+            # Guard against stuck cursor
+            if next_start_after == start_after and next_start_after_id == start_after_id:
+                logger.warning("Cursor unchanged — stopping pagination.")
+                break
+
+            start_after = str(next_start_after)
+            start_after_id = next_start_after_id
 
     return results

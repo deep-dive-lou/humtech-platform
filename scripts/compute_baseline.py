@@ -54,15 +54,16 @@ async def main() -> None:
         print(f"Label:  {label}")
 
         # ------------------------------------------------------------------ #
-        # Load stage mappings (ordered)
+        # Load stage mappings (ordered, deduplicated by canonical stage)
         # ------------------------------------------------------------------ #
         stage_rows = await conn.fetch("""
-            SELECT canonical_stage, stage_order
+            SELECT canonical_stage, MIN(stage_order) as stage_order
             FROM engine.stage_mappings
             WHERE tenant_id = $1::uuid
               AND provider = $2
               AND is_active = TRUE
-            ORDER BY stage_order
+            GROUP BY canonical_stage
+            ORDER BY MIN(stage_order)
         """, tenant_id, crm_provider)
 
         if not stage_rows:
@@ -70,27 +71,30 @@ async def main() -> None:
             sys.exit(1)
 
         stages = [(r["canonical_stage"], r["stage_order"]) for r in stage_rows]
-        # Exclude terminal stages from funnel (they'll appear as counts but not conversion steps)
-        funnel_stages = [s for s in stages if s[0] not in ("won", "lost")]
+        # Terminal stages are exits, not funnel progression
+        terminal_stages = {"won", "lost", "rejected"}
+        funnel_stages = [s for s in stages if s[0] not in terminal_stages]
         print(f"Stages: {[s[0] for s in stages]}")
 
         # ------------------------------------------------------------------ #
-        # Load leads summary
+        # Load leads summary (CTE deduplicates many-to-one stage mappings)
         # ------------------------------------------------------------------ #
-        # Use engine.leads directly (backfill keeps current_stage up to date)
         leads = await conn.fetch("""
+            WITH canonical_orders AS (
+                SELECT canonical_stage, MIN(stage_order) as stage_order
+                FROM engine.stage_mappings
+                WHERE tenant_id = $1::uuid AND provider = $2 AND is_active = TRUE
+                GROUP BY canonical_stage
+            )
             SELECT
                 l.lead_id,
                 l.current_stage,
                 l.is_open,
                 l.lead_value,
-                sm.stage_order as current_stage_order
+                co.stage_order as current_stage_order
             FROM engine.leads l
-            LEFT JOIN engine.stage_mappings sm
-                ON sm.tenant_id = l.tenant_id
-               AND sm.provider = $2
-               AND sm.canonical_stage = l.current_stage
-               AND sm.is_active = TRUE
+            LEFT JOIN canonical_orders co
+                ON co.canonical_stage = l.current_stage
             WHERE l.tenant_id = $1::uuid
               AND l.provider = $2
         """, tenant_id, crm_provider)
@@ -102,20 +106,30 @@ async def main() -> None:
         total_leads = len(leads)
         total_won = sum(1 for l in leads if l["current_stage"] == "won")
         total_lost = sum(1 for l in leads if l["current_stage"] == "lost")
+        total_rejected = sum(1 for l in leads if l["current_stage"] == "rejected")
         deal_values = [float(l["lead_value"]) for l in leads if l["lead_value"] is not None]
         avg_deal_value = round(sum(deal_values) / len(deal_values), 2) if deal_values else None
         win_rate = round(total_won / total_leads, 4) if total_leads > 0 else 0.0
+        rejection_rate = round(total_rejected / total_leads, 4) if total_leads > 0 else 0.0
 
         # ------------------------------------------------------------------ #
-        # Compute funnel: for each stage, count leads at or beyond that stage
+        # Compute funnel: for each non-terminal stage, count leads at or
+        # beyond that stage. Lost/rejected leads are exits — they don't count
+        # as having progressed. Won leads count as having reached the end.
         # ------------------------------------------------------------------ #
+        terminal_losses = {"lost", "rejected"}
         stage_funnel: dict[str, int] = {}
-        for stage_name, stage_order in stages:
+        for stage_name, stage_order in funnel_stages:
             count = sum(
                 1 for l in leads
-                if (l["current_stage_order"] or 0) >= stage_order
+                if l["current_stage"] not in terminal_losses
+                and (l["current_stage_order"] or 0) >= stage_order
             )
             stage_funnel[stage_name] = count
+        # Add terminal counts separately
+        stage_funnel["won"] = total_won
+        stage_funnel["rejected"] = total_rejected
+        stage_funnel["lost"] = total_lost
 
         # Conversion rates between consecutive funnel stages
         stage_conversion_rates: dict[str, float] = {}
@@ -161,7 +175,9 @@ async def main() -> None:
             "total_leads": total_leads,
             "total_won": total_won,
             "total_lost": total_lost,
+            "total_rejected": total_rejected,
             "win_rate": win_rate,
+            "rejection_rate": rejection_rate,
             "avg_deal_value_gbp": avg_deal_value,
             "stage_funnel": stage_funnel,
             "stage_conversion_rates": stage_conversion_rates,
@@ -194,6 +210,7 @@ async def main() -> None:
         print(f"  Total leads:           {total_leads}")
         print(f"  Won:                   {total_won} ({win_rate*100:.1f}%)")
         print(f"  Lost:                  {total_lost}")
+        print(f"  Rejected:              {total_rejected} ({rejection_rate*100:.1f}%)")
         print(f"  Avg deal value:        £{avg_deal_value:,.2f}" if avg_deal_value else "  Avg deal value:        n/a")
         print(f"  Lead volume/month:     {lead_volume_per_month}")
         print(f"  Period:                {period_days} days")

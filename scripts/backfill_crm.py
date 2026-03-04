@@ -110,9 +110,9 @@ async def main() -> None:
                 skipped_no_mapping += 1
                 continue
 
-            # Determine is_open / terminal event type
-            is_terminal_won = opp.status in ("won",)
-            is_terminal_lost = opp.status in ("lost", "abandoned")
+            # Determine terminal status from GHL status first, then canonical stage as fallback
+            is_terminal_won = opp.status in ("won",) or canonical == "won"
+            is_terminal_lost = opp.status in ("lost", "abandoned") or canonical in ("lost", "rejected")
             is_open = not (is_terminal_won or is_terminal_lost)
 
             # Upsert lead
@@ -138,7 +138,7 @@ async def main() -> None:
                 event_type="lead_created",
                 source="ghl_backfill",
                 occurred_at=opp.created_at,
-                canonical_stage="new_lead",
+                canonical_stage="lead_created",
                 source_event_id=f"backfill-created-{opp.id}",
             )
 
@@ -164,8 +164,8 @@ async def main() -> None:
                     event_type="lead_lost",
                     source="ghl_backfill",
                     occurred_at=opp.updated_at,
-                    canonical_stage="lost",
-                    source_event_id=f"backfill-lost-{opp.id}",
+                    canonical_stage=canonical,
+                    source_event_id=f"backfill-{canonical}-{opp.id}",
                 )
             else:
                 ev2 = await write_lead_event(
