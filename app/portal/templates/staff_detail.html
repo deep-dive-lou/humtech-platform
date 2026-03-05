@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ req.client_name }} — HumTech Portal</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 </head>
 <body class="bg-gray-50 text-gray-900 min-h-screen">
 
@@ -216,6 +217,54 @@
                 {% endfor %}
               </div>
               {% endif %}
+
+              {% set item_zones = zones_by_item.get(item.id | string, []) %}
+              {% set filled_zones = item_zones | selectattr("filled_at") | list %}
+              {% if filled_zones %}
+              <div class="mt-3">
+                <div class="flex items-center gap-3">
+                <button type="button" onclick="toggleStaffDoc('{{ item.id }}')"
+                        class="inline-flex items-center gap-2 text-xs font-medium text-blue-600 hover:text-blue-800">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                  </svg>
+                  <span id="staff-doc-label-{{ item.id }}">View completed document</span>
+                </button>
+                <a href="/portal/staff/requests/{{ request.id }}/items/{{ item.id }}/download-completed"
+                   class="inline-flex items-center gap-1.5 text-xs font-medium text-green-600 hover:text-green-800">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                  </svg>
+                  Download PDF
+                </a>
+                </div>
+                <div id="staff-doc-wrapper-{{ item.id }}" style="display: none;" class="mt-2">
+                  <div class="relative border border-gray-200 rounded-lg bg-gray-100" id="staff-doc-container-{{ item.id }}" style="overflow: visible;">
+                    <p id="staff-doc-loading-{{ item.id }}" class="text-xs text-gray-400 p-4">Loading document...</p>
+                    <div id="staff-doc-nav-{{ item.id }}" style="display: none;"
+                         class="flex items-center justify-between bg-white border-b border-gray-200 px-3 py-1.5">
+                      <button type="button" onclick="staffDocPrev('{{ item.id }}')"
+                              id="staff-doc-prev-{{ item.id }}"
+                              class="text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed p-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                        </svg>
+                      </button>
+                      <span id="staff-doc-pageinfo-{{ item.id }}" class="text-xs text-gray-500">Page 1 of 1</span>
+                      <button type="button" onclick="staffDocNext('{{ item.id }}')"
+                              id="staff-doc-next-{{ item.id }}"
+                              class="text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed p-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                      </button>
+                    </div>
+                    <canvas id="staff-doc-canvas-{{ item.id }}" class="block" style="max-width: 100%;"></canvas>
+                  </div>
+                </div>
+              </div>
+              {% endif %}
             </div>
 
             {% if req.status not in ['completed', 'cancelled'] %}
@@ -334,6 +383,130 @@
       const data = await res.json();
       if (!res.ok) { alert(data.error || 'Action failed'); return; }
       window.location.reload();
+    }
+
+    // -----------------------------------------------------------------------
+    // Staff document viewer with filled zone overlays
+    // -----------------------------------------------------------------------
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+
+    const staffDocState = {};
+    const staffZones = {};
+    {% for item_id, zones in zones_by_item.items() %}
+    staffZones["{{ item_id }}"] = {{ zones | tojson }};
+    {% endfor %}
+
+    function toggleStaffDoc(itemId) {
+      const wrapper = document.getElementById(`staff-doc-wrapper-${itemId}`);
+      const label = document.getElementById(`staff-doc-label-${itemId}`);
+      const isOpen = wrapper.style.display !== 'none';
+      if (isOpen) {
+        wrapper.style.display = 'none';
+        label.textContent = 'View completed document';
+      } else {
+        wrapper.style.display = 'block';
+        label.textContent = 'Hide document';
+        if (!staffDocState[itemId]?.loaded) loadStaffDoc(itemId);
+      }
+    }
+
+    async function loadStaffDoc(itemId) {
+      const loadingEl = document.getElementById(`staff-doc-loading-${itemId}`);
+      try {
+        const url = `/portal/staff/requests/${requestId}/items/${itemId}/pdf-bytes`;
+        const pdf = await pdfjsLib.getDocument(url).promise;
+        staffDocState[itemId] = { pdf, currentPage: 1, numPages: pdf.numPages, loaded: true };
+        if (loadingEl) loadingEl.style.display = 'none';
+        const nav = document.getElementById(`staff-doc-nav-${itemId}`);
+        if (nav) nav.style.display = 'flex';
+        await renderStaffPage(itemId, 1);
+      } catch (err) {
+        console.error('Failed to load PDF', err);
+        if (loadingEl) { loadingEl.textContent = 'Failed to load document.'; loadingEl.classList.add('text-red-500'); }
+      }
+    }
+
+    async function renderStaffPage(itemId, pageNum) {
+      const state = staffDocState[itemId];
+      if (!state) return;
+
+      const container = document.getElementById(`staff-doc-container-${itemId}`);
+      const pdfCanvas = document.getElementById(`staff-doc-canvas-${itemId}`);
+
+      container.querySelectorAll('.zone-overlay').forEach(el => el.remove());
+
+      const page = await state.pdf.getPage(pageNum);
+      const dpr = window.devicePixelRatio || 1;
+      const wrapperEl = document.getElementById(`staff-doc-wrapper-${itemId}`);
+      const desiredWidth = Math.min(wrapperEl?.clientWidth || 600, 700);
+      const unscaled = page.getViewport({ scale: 1 });
+      const scale = desiredWidth / unscaled.width;
+      const viewport = page.getViewport({ scale });
+
+      pdfCanvas.width = Math.round(viewport.width * dpr);
+      pdfCanvas.height = Math.round(viewport.height * dpr);
+      pdfCanvas.style.width = viewport.width + 'px';
+      pdfCanvas.style.height = viewport.height + 'px';
+
+      const ctx = pdfCanvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      state.currentPage = pageNum;
+      document.getElementById(`staff-doc-pageinfo-${itemId}`).textContent = `Page ${pageNum} of ${state.numPages}`;
+      document.getElementById(`staff-doc-prev-${itemId}`).disabled = (pageNum <= 1);
+      document.getElementById(`staff-doc-next-${itemId}`).disabled = (pageNum >= state.numPages);
+
+      const navEl = document.getElementById(`staff-doc-nav-${itemId}`);
+      const navH = navEl ? navEl.offsetHeight : 0;
+
+      const zones = (staffZones[itemId] || []).filter(z => z.page === pageNum - 1 && z.filled_at);
+      for (const z of zones) {
+        const oX = z.x / 100 * viewport.width;
+        const oY = z.y / 100 * viewport.height;
+        const oW = z.w / 100 * viewport.width;
+        const oH = z.h / 100 * viewport.height;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'zone-overlay absolute rounded-sm';
+        overlay.style.left = oX + 'px';
+        overlay.style.top = (navH + oY) + 'px';
+        overlay.style.width = oW + 'px';
+        overlay.style.height = oH + 'px';
+
+        if (z.zone_type === 'signature' && z.signature_url) {
+          overlay.className += ' border border-purple-300';
+          const img = document.createElement('img');
+          img.src = z.signature_url;
+          img.className = 'w-full h-full object-contain';
+          overlay.appendChild(img);
+          container.appendChild(overlay);
+        } else if (z.zone_type === 'text' && z.value) {
+          overlay.className += ' border border-blue-300 bg-blue-50 bg-opacity-60 flex items-center';
+          const span = document.createElement('span');
+          span.className = 'text-sm text-gray-900 px-1 truncate w-full';
+          span.textContent = z.value;
+          overlay.appendChild(span);
+          container.appendChild(overlay);
+        } else if (z.zone_type === 'date' && z.value) {
+          overlay.className += ' border border-green-300 bg-green-50 bg-opacity-60 flex items-center';
+          const span = document.createElement('span');
+          span.className = 'text-sm text-gray-900 px-1 truncate w-full';
+          span.textContent = z.value;
+          overlay.appendChild(span);
+          container.appendChild(overlay);
+        }
+      }
+    }
+
+    function staffDocPrev(itemId) {
+      const s = staffDocState[itemId];
+      if (s && s.currentPage > 1) renderStaffPage(itemId, s.currentPage - 1);
+    }
+    function staffDocNext(itemId) {
+      const s = staffDocState[itemId];
+      if (s && s.currentPage < s.numPages) renderStaffPage(itemId, s.currentPage + 1);
     }
   </script>
 </body>

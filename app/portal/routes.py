@@ -196,12 +196,36 @@ async def client_portal_view(
             ORDER BY sort_order ASC
         """, tok["request_id"])
 
+        # Fetch zones for all items
+        item_ids = [i["id"] for i in items]
+        zones = []
+        if item_ids:
+            zones = await conn.fetch("""
+                SELECT id, request_item_id, zone_type::text AS zone_type, label,
+                       page, x, y, w, h, sort_order, required, value, signature_file_key
+                FROM portal.request_item_zones
+                WHERE request_item_id = ANY($1::uuid[])
+                ORDER BY sort_order ASC
+            """, item_ids)
+
+    # Attach zones to items
+    zones_by_item = {}
+    for z in zones:
+        rid = str(z["request_item_id"])
+        zd = dict(z)
+        zd["id"] = str(zd["id"])
+        zd["request_item_id"] = rid
+        zones_by_item.setdefault(rid, []).append(zd)
+    items_list = [dict(i) for i in items]
+    for item in items_list:
+        item["zones"] = zones_by_item.get(str(item["id"]), [])
+
     brand = await get_tenant_brand(conn, str(tok["tenant_id"]))
     return templates.TemplateResponse("client.html", {
         "request": request,
         "error": None,
         "req": dict(req),
-        "items": [dict(i) for i in items],
+        "items": items_list,
         "token": token,
         "brand": brand,
     })
@@ -512,3 +536,117 @@ async def acknowledge_signature(
         )
 
     return {"item_id": item_id, "status": "uploaded"}
+
+
+@router.post("/r/{token}/items/{item_id}/zones/submit")
+async def submit_zone_values(
+    token: str,
+    item_id: str,
+    body: dict = Body(default={}),
+    conn: asyncpg.Connection = Depends(get_conn),
+):
+    """Save filled zone values (text, date) from client."""
+    token_hash = _hash_token(token)
+
+    tok = await conn.fetchrow("""
+        SELECT request_id, tenant_id FROM portal.request_access_tokens
+        WHERE token_hash=$1 AND revoked_at IS NULL
+          AND (expires_at IS NULL OR expires_at > now())
+        LIMIT 1
+    """, token_hash)
+    if not tok:
+        raise HTTPException(status_code=404, detail="Invalid or expired link")
+
+    # Verify item belongs to this request
+    item = await conn.fetchrow(
+        "SELECT id FROM portal.doc_request_items WHERE id=$1::uuid AND request_id=$2",
+        item_id, tok["request_id"],
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    zone_values = body.get("zone_values", {})
+    sig_keys = body.get("signature_keys", {})
+
+    for zone_id, value in zone_values.items():
+        await conn.execute(
+            """UPDATE portal.request_item_zones
+               SET value = $1, filled_at = now()
+               WHERE id = $2::uuid AND request_item_id = $3::uuid AND tenant_id = $4""",
+            str(value).strip() if value else None,
+            zone_id, item_id, tok["tenant_id"],
+        )
+
+    for zone_id, file_key in sig_keys.items():
+        await conn.execute(
+            """UPDATE portal.request_item_zones
+               SET signature_file_key = $1, filled_at = now()
+               WHERE id = $2::uuid AND request_item_id = $3::uuid AND tenant_id = $4""",
+            file_key, zone_id, item_id, tok["tenant_id"],
+        )
+
+    # Mark item as uploaded
+    await conn.execute(
+        """UPDATE portal.doc_request_items
+           SET status = 'uploaded'::public.request_item_status
+           WHERE id = $1::uuid""",
+        item_id,
+    )
+
+    await log_audit(
+        conn,
+        tenant_id=str(tok["tenant_id"]),
+        event_type="zones_submitted",
+        actor="client",
+        request_id=str(tok["request_id"]),
+    )
+
+    return {"item_id": item_id, "status": "uploaded"}
+
+
+@router.get("/r/{token}/items/{item_id}/download-completed")
+async def client_download_completed(
+    token: str,
+    item_id: str,
+    conn: asyncpg.Connection = Depends(get_conn),
+):
+    """Download the completed PDF with all filled zones burned in."""
+    token_hash = _hash_token(token)
+    tok = await conn.fetchrow("""
+        SELECT request_id, tenant_id FROM portal.request_access_tokens
+        WHERE token_hash=$1 AND revoked_at IS NULL
+          AND (expires_at IS NULL OR expires_at > now())
+        LIMIT 1
+    """, token_hash)
+    if not tok:
+        raise HTTPException(status_code=404, detail="Invalid or expired link")
+
+    item = await conn.fetchrow(
+        """SELECT file_key, label FROM portal.doc_request_items
+           WHERE id = $1::uuid AND request_id = $2::uuid""",
+        item_id, tok["request_id"],
+    )
+    if not item or not item["file_key"]:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    zones = await conn.fetch(
+        """SELECT zone_type::text AS zone_type, page, x, y, w, h,
+                  value, signature_file_key
+           FROM portal.request_item_zones
+           WHERE request_item_id = $1::uuid AND filled_at IS NOT NULL""",
+        item_id,
+    )
+
+    from .storage import download_object
+    from .pdf_merge import merge_zones_onto_pdf
+    from fastapi.responses import Response
+
+    pdf_data = download_object(item["file_key"])
+    merged = merge_zones_onto_pdf(pdf_data, [dict(z) for z in zones], download_object)
+
+    filename = (item["label"] or "document").replace('"', "") + " - completed.pdf"
+    return Response(
+        content=merged,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

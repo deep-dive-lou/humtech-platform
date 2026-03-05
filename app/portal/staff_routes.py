@@ -277,10 +277,18 @@ async def staff_template_edit(
         return RedirectResponse(url="/portal/staff/templates", status_code=303)
 
     items = await conn.fetch(
-        """SELECT id, title, instructions, required, sort_order,
-                  item_type::text AS item_type, file_key,
-                  sig_page, sig_x, sig_y, sig_w, sig_h
-           FROM portal.template_items WHERE template_id = $1::uuid ORDER BY sort_order""",
+        """SELECT ti.id, ti.title, ti.instructions, ti.required, ti.sort_order,
+                  ti.item_type::text AS item_type, ti.file_key,
+                  ti.sig_page, ti.sig_x, ti.sig_y, ti.sig_w, ti.sig_h,
+                  COALESCE(zc.zone_count, 0)::int AS zone_count
+           FROM portal.template_items ti
+           LEFT JOIN (
+               SELECT template_item_id, COUNT(*) AS zone_count
+               FROM portal.template_item_zones
+               GROUP BY template_item_id
+           ) zc ON zc.template_item_id = ti.id
+           WHERE ti.template_id = $1::uuid
+           ORDER BY ti.sort_order""",
         template_id,
     )
     brand = await get_tenant_brand(conn, staff["tenant_id"])
@@ -493,6 +501,135 @@ async def template_pdf_bytes(
     from fastapi.responses import Response
     pdf_data = download_object(item["file_key"])
     return Response(content=pdf_data, media_type="application/pdf")
+
+
+# ---------------------------------------------------------------------------
+# Template item zones (multi-zone builder)
+# ---------------------------------------------------------------------------
+
+_VALID_ZONE_TYPES = ("signature", "text", "date")
+
+
+@router.get("/templates/{template_id}/items/{item_id}/zones")
+async def list_zones(
+    template_id: str,
+    item_id: str,
+    staff: dict = Depends(require_staff),
+    conn: asyncpg.Connection = Depends(get_conn),
+):
+    # Verify item belongs to this template + tenant
+    item = await conn.fetchrow(
+        "SELECT id FROM portal.template_items WHERE id=$1::uuid AND template_id=$2::uuid AND tenant_id=$3::uuid",
+        item_id, template_id, staff["tenant_id"],
+    )
+    if not item:
+        return JSONResponse({"error": "Item not found"}, status_code=404)
+
+    rows = await conn.fetch(
+        """SELECT id, zone_type::text AS zone_type, label, page, x, y, w, h,
+                  sort_order, required
+           FROM portal.template_item_zones
+           WHERE template_item_id = $1::uuid AND tenant_id = $2::uuid
+           ORDER BY sort_order ASC, created_at ASC""",
+        item_id, staff["tenant_id"],
+    )
+    return {"zones": [dict(r) for r in rows]}
+
+
+@router.post("/templates/{template_id}/items/{item_id}/zones")
+async def create_zone(
+    template_id: str,
+    item_id: str,
+    body: dict = Body(...),
+    staff: dict = Depends(require_admin),
+    conn: asyncpg.Connection = Depends(get_conn),
+):
+    # Verify item
+    item = await conn.fetchrow(
+        "SELECT id FROM portal.template_items WHERE id=$1::uuid AND template_id=$2::uuid AND tenant_id=$3::uuid",
+        item_id, template_id, staff["tenant_id"],
+    )
+    if not item:
+        return JSONResponse({"error": "Item not found"}, status_code=404)
+
+    zone_type = body.get("zone_type", "")
+    if zone_type not in _VALID_ZONE_TYPES:
+        return JSONResponse({"error": f"zone_type must be one of {_VALID_ZONE_TYPES}"}, status_code=400)
+
+    label = (body.get("label") or "").strip()
+    if not label:
+        return JSONResponse({"error": "label required"}, status_code=400)
+
+    page = int(body.get("page", 0))
+    x = float(body.get("x", 0))
+    y = float(body.get("y", 0))
+    w = float(body.get("w", 20))
+    h = float(body.get("h", 5))
+    required = bool(body.get("required", True))
+
+    max_order = await conn.fetchval(
+        "SELECT COALESCE(MAX(sort_order), -1) FROM portal.template_item_zones WHERE template_item_id = $1::uuid",
+        item_id,
+    )
+
+    zone_id = await conn.fetchval(
+        """INSERT INTO portal.template_item_zones
+               (template_item_id, tenant_id, zone_type, label, page, x, y, w, h, sort_order, required)
+           VALUES ($1::uuid, $2::uuid, $3::public.zone_type, $4, $5, $6, $7, $8, $9, $10, $11)
+           RETURNING id""",
+        item_id, staff["tenant_id"], zone_type, label, page, x, y, w, h, max_order + 1, required,
+    )
+    return {
+        "id": str(zone_id), "zone_type": zone_type, "label": label,
+        "page": page, "x": x, "y": y, "w": w, "h": h,
+        "sort_order": max_order + 1, "required": required,
+    }
+
+
+@router.put("/templates/{template_id}/items/{item_id}/zones/{zone_id}")
+async def update_zone(
+    template_id: str,
+    item_id: str,
+    zone_id: str,
+    body: dict = Body(...),
+    staff: dict = Depends(require_admin),
+    conn: asyncpg.Connection = Depends(get_conn),
+):
+    zone_type = body.get("zone_type", "")
+    if zone_type not in _VALID_ZONE_TYPES:
+        return JSONResponse({"error": f"zone_type must be one of {_VALID_ZONE_TYPES}"}, status_code=400)
+
+    await conn.execute(
+        """UPDATE portal.template_item_zones
+           SET zone_type = $1::public.zone_type, label = $2, page = $3,
+               x = $4, y = $5, w = $6, h = $7, required = $8
+           WHERE id = $9::uuid AND template_item_id = $10::uuid AND tenant_id = $11::uuid""",
+        zone_type,
+        (body.get("label") or "").strip(),
+        int(body.get("page", 0)),
+        float(body.get("x", 0)),
+        float(body.get("y", 0)),
+        float(body.get("w", 20)),
+        float(body.get("h", 5)),
+        bool(body.get("required", True)),
+        zone_id, item_id, staff["tenant_id"],
+    )
+    return {"ok": True}
+
+
+@router.delete("/templates/{template_id}/items/{item_id}/zones/{zone_id}")
+async def delete_zone(
+    template_id: str,
+    item_id: str,
+    zone_id: str,
+    staff: dict = Depends(require_admin),
+    conn: asyncpg.Connection = Depends(get_conn),
+):
+    await conn.execute(
+        "DELETE FROM portal.template_item_zones WHERE id=$1::uuid AND template_item_id=$2::uuid AND tenant_id=$3::uuid",
+        zone_id, item_id, staff["tenant_id"],
+    )
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
@@ -816,13 +953,14 @@ async def create_request(
                 template_id,
             )
             for item in items:
-                await conn.execute(
+                req_item_id = await conn.fetchval(
                     """
                     INSERT INTO portal.doc_request_items
                         (tenant_id, request_id, item_type, title, instructions, required, sort_order, file_key,
                          sig_page, sig_x, sig_y, sig_w, sig_h)
                     VALUES ($1::uuid, $2::uuid, $3::public.template_item_type, $4, $5, $6, $7, $8,
                             $9, $10, $11, $12, $13)
+                    RETURNING id
                     """,
                     staff["tenant_id"],
                     request_id,
@@ -838,6 +976,23 @@ async def create_request(
                     item.get("sig_w"),
                     item.get("sig_h"),
                 )
+                # Clone zones from template item to request item
+                zones = await conn.fetch(
+                    "SELECT * FROM portal.template_item_zones WHERE template_item_id = $1::uuid",
+                    item["id"],
+                )
+                for z in zones:
+                    await conn.execute(
+                        """INSERT INTO portal.request_item_zones
+                               (request_item_id, tenant_id, zone_type, label, page,
+                                x, y, w, h, sort_order, required)
+                           VALUES ($1::uuid, $2::uuid, $3::public.zone_type, $4, $5,
+                                   $6, $7, $8, $9, $10, $11)""",
+                        req_item_id, staff["tenant_id"],
+                        z["zone_type"], z["label"], z["page"],
+                        z["x"], z["y"], z["w"], z["h"],
+                        z["sort_order"], z["required"],
+                    )
 
     return RedirectResponse(
         url=f"/portal/staff/requests/{request_id}",
@@ -1027,6 +1182,34 @@ async def staff_request_detail(
         item_id = str(f["request_item_id"])
         files_by_item.setdefault(item_id, []).append(f_dict)
 
+    # Fetch submitted zone values
+    item_ids = [i["id"] for i in items]
+    zones_by_item: dict = {}
+    if item_ids:
+        zones = await conn.fetch("""
+            SELECT id, request_item_id, zone_type::text AS zone_type, label,
+                   page, x, y, w, h, sort_order, required,
+                   value, signature_file_key, filled_at
+            FROM portal.request_item_zones
+            WHERE request_item_id = ANY($1::uuid[])
+            ORDER BY sort_order ASC
+        """, item_ids)
+        for z in zones:
+            rid = str(z["request_item_id"])
+            zd = dict(z)
+            zd["id"] = str(zd["id"])
+            zd["request_item_id"] = rid
+            # Convert datetime for JSON serialization
+            if zd.get("filled_at"):
+                zd["filled_at"] = zd["filled_at"].isoformat()
+            # Presign signature images
+            if zd.get("signature_file_key"):
+                try:
+                    zd["signature_url"] = presign_get(zd["signature_file_key"])
+                except Exception:
+                    zd["signature_url"] = None
+            zones_by_item.setdefault(rid, []).append(zd)
+
     # Check if all items are approved (for "ready to close" banner)
     all_approved = (
         len(items) > 0
@@ -1064,10 +1247,75 @@ async def staff_request_detail(
         "signature_doc_urls": signature_doc_urls,
         "signature_img_urls": signature_img_urls,
         "signed_pdf_urls": signed_pdf_urls,
+        "zones_by_item": zones_by_item,
         "staff": staff,
         "brand": brand,
         "all_approved": all_approved,
     })
+
+
+# ---------------------------------------------------------------------------
+# Staff: stream request item PDF bytes (for PDF.js rendering)
+# ---------------------------------------------------------------------------
+
+@router.get("/requests/{request_id}/items/{item_id}/pdf-bytes")
+async def staff_item_pdf_bytes(
+    request_id: str,
+    item_id: str,
+    staff: dict = Depends(require_staff),
+    conn: asyncpg.Connection = Depends(get_conn),
+):
+    item = await conn.fetchrow(
+        """SELECT file_key FROM portal.doc_request_items
+           WHERE id = $1::uuid AND request_id = $2::uuid""",
+        item_id, request_id,
+    )
+    if not item or not item["file_key"]:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    from .storage import download_object
+    from fastapi.responses import Response
+    pdf_data = download_object(item["file_key"])
+    return Response(content=pdf_data, media_type="application/pdf")
+
+
+@router.get("/requests/{request_id}/items/{item_id}/download-completed")
+async def staff_download_completed(
+    request_id: str,
+    item_id: str,
+    staff: dict = Depends(require_staff),
+    conn: asyncpg.Connection = Depends(get_conn),
+):
+    """Download the completed PDF with all filled zones burned in."""
+    item = await conn.fetchrow(
+        """SELECT file_key, label FROM portal.doc_request_items
+           WHERE id = $1::uuid AND request_id = $2::uuid""",
+        item_id, request_id,
+    )
+    if not item or not item["file_key"]:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    zones = await conn.fetch(
+        """SELECT zone_type::text AS zone_type, page, x, y, w, h,
+                  value, signature_file_key
+           FROM portal.request_item_zones
+           WHERE request_item_id = $1::uuid AND filled_at IS NOT NULL""",
+        item_id,
+    )
+
+    from .storage import download_object
+    from .pdf_merge import merge_zones_onto_pdf
+    from fastapi.responses import Response
+
+    pdf_data = download_object(item["file_key"])
+    merged = merge_zones_onto_pdf(pdf_data, [dict(z) for z in zones], download_object)
+
+    filename = (item["label"] or "document").replace('"', "") + " - completed.pdf"
+    return Response(
+        content=merged,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ---------------------------------------------------------------------------

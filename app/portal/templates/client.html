@@ -105,8 +105,22 @@
                 {% endif %}
                 {% if item.status == 'approved' %}
                 <span class="text-xs text-green-600 font-medium">Approved</span>
+                <a href="/portal/r/{{ token }}/items/{{ item.id }}/download-completed"
+                   class="inline-flex items-center gap-1 text-xs font-medium text-green-600 hover:text-green-800">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                  </svg>
+                  Download
+                </a>
                 {% elif item.status == 'uploaded' %}
                 <span class="text-xs text-blue-600 font-medium">Submitted — awaiting review</span>
+                <a href="/portal/r/{{ token }}/items/{{ item.id }}/download-completed"
+                   class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                  </svg>
+                  Download
+                </a>
                 {% endif %}
               </div>
 
@@ -116,7 +130,55 @@
 
               <!-- Upload / signature area — for pending and missing items -->
               {% if item.status in ['missing', 'pending'] %}
-                {% if item.item_type == 'signature' and item.sig_page is not none %}
+                {% if item.zones %}
+                <!-- Zone-aware document (multi-zone PDF overlay) -->
+                <div class="mt-3" id="upload-{{ item.id }}">
+                  <button type="button" id="open-doc-btn-{{ item.id }}" onclick="toggleZoneDoc('{{ item.id }}')"
+                          class="inline-flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg cursor-pointer transition-colors text-white"
+                          style="background-color: {{ brand_color }}; opacity: 0.9;"
+                          onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.9'">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    <span id="open-doc-label-{{ item.id }}">Open document to complete</span>
+                  </button>
+
+                  <div id="pdf-wrapper-{{ item.id }}" style="display: none;">
+                    <div class="relative border border-gray-200 rounded-lg bg-gray-100" id="pdf-container-{{ item.id }}" style="min-height: 200px; overflow: visible;">
+                      <p id="pdf-loading-{{ item.id }}" class="text-xs text-gray-400 p-4">Loading document...</p>
+                      <div id="pdf-nav-{{ item.id }}" style="display: none;"
+                           class="flex items-center justify-between bg-white border-b border-gray-200 px-3 py-1.5">
+                        <button type="button" onclick="pdfPrevPage('{{ item.id }}')"
+                                id="pdf-prev-{{ item.id }}"
+                                class="text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed p-1">
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                          </svg>
+                        </button>
+                        <span id="pdf-pageinfo-{{ item.id }}" class="text-xs text-gray-500">Page 1 of 1</span>
+                        <button type="button" onclick="pdfNextPage('{{ item.id }}')"
+                                id="pdf-next-{{ item.id }}"
+                                class="text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed p-1">
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                          </svg>
+                        </button>
+                      </div>
+                      <canvas id="pdf-canvas-{{ item.id }}" class="block" style="max-width: 100%;"></canvas>
+                    </div>
+                    <div class="flex items-center gap-3 mt-2">
+                      <button type="button" id="submit-zones-btn-{{ item.id }}" onclick="submitAllZones('{{ item.id }}')"
+                              class="text-xs font-medium px-3 py-1.5 rounded-lg text-white transition-colors"
+                              style="background-color: {{ brand_color }}; opacity: 0.9;"
+                              onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.9'">
+                        Submit all fields
+                      </button>
+                    </div>
+                    <p id="zone-status-{{ item.id }}" class="text-xs text-gray-400 mt-1 hidden"></p>
+                  </div>
+                </div>
+
+              {% elif item.item_type == 'signature' and item.sig_page is not none %}
                 <!-- In-document signature (PDF.js + overlay) -->
                 <div class="mt-3" id="upload-{{ item.id }}">
                   <!-- Collapsed: click to open -->
@@ -268,6 +330,17 @@
     };
     {% endif %}
     {% endfor %}
+
+    // Data for zone-aware items
+    const itemZones = {};
+    {% for item in items %}
+    {% if item.zones %}
+    itemZones["{{ item.id }}"] = {{ item.zones | tojson }};
+    {% endif %}
+    {% endfor %}
+
+    // Zone-specific signature pads (keyed by zone id)
+    const zoneSigPads = {};
 
     // -----------------------------------------------------------------------
     // Init: legacy signature pads (in-document handled on click)
@@ -434,12 +507,18 @@
 
     function pdfPrevPage(itemId) {
       const state = pdfState[itemId];
-      if (state && state.currentPage > 1) renderPdfPage(itemId, state.currentPage - 1);
+      if (state && state.currentPage > 1) {
+        if (itemZones[itemId]) renderZonePage(itemId, state.currentPage - 1);
+        else renderPdfPage(itemId, state.currentPage - 1);
+      }
     }
 
     function pdfNextPage(itemId) {
       const state = pdfState[itemId];
-      if (state && state.currentPage < state.numPages) renderPdfPage(itemId, state.currentPage + 1);
+      if (state && state.currentPage < state.numPages) {
+        if (itemZones[itemId]) renderZonePage(itemId, state.currentPage + 1);
+        else renderPdfPage(itemId, state.currentPage + 1);
+      }
     }
 
     // -----------------------------------------------------------------------
@@ -606,6 +685,12 @@
         statusSpan.className = 'text-xs text-blue-600 font-medium';
         statusSpan.textContent = statusText;
         titleRow.appendChild(statusSpan);
+
+        const dl = document.createElement('a');
+        dl.href = `/portal/r/${TOKEN}/items/${itemId}/download-completed`;
+        dl.className = 'inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800';
+        dl.innerHTML = `<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg> Download`;
+        titleRow.appendChild(dl);
       }
       updateProgressBar();
     }
@@ -616,6 +701,221 @@
       const bar = document.querySelector('[style*="width:"]');
       if (bar && total > 0) {
         bar.style.width = `${Math.round(done / total * 100)}%`;
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Zone-aware document viewer
+    // -----------------------------------------------------------------------
+
+    function toggleZoneDoc(itemId) {
+      const wrapper = document.getElementById(`pdf-wrapper-${itemId}`);
+      const label = document.getElementById(`open-doc-label-${itemId}`);
+      const isOpen = wrapper.style.display !== 'none';
+
+      if (isOpen) {
+        wrapper.style.display = 'none';
+        label.textContent = 'Open document to complete';
+      } else {
+        wrapper.style.display = 'block';
+        label.textContent = 'Close document';
+        if (!pdfState[itemId]?.loaded) {
+          loadZonePdf(itemId);
+        }
+      }
+    }
+
+    async function loadZonePdf(itemId) {
+      const loadingEl = document.getElementById(`pdf-loading-${itemId}`);
+      const container = document.getElementById(`pdf-container-${itemId}`);
+
+      try {
+        const url = `/portal/r/${TOKEN}/signature/${itemId}/pdf-bytes`;
+        const pdf = await pdfjsLib.getDocument(url).promise;
+        pdfState[itemId] = { pdf, currentPage: 1, numPages: pdf.numPages, loaded: true };
+
+        if (loadingEl) loadingEl.style.display = 'none';
+        container.style.minHeight = '';
+
+        const nav = document.getElementById(`pdf-nav-${itemId}`);
+        if (nav) nav.style.display = 'flex';
+
+        await renderZonePage(itemId, 1);
+      } catch (err) {
+        console.error('Failed to load PDF for', itemId, err);
+        if (loadingEl) {
+          loadingEl.textContent = 'Failed to load document. Please refresh the page.';
+          loadingEl.classList.add('text-red-500');
+        }
+      }
+    }
+
+    async function renderZonePage(itemId, pageNum) {
+      const state = pdfState[itemId];
+      if (!state) return;
+
+      const container = document.getElementById(`pdf-container-${itemId}`);
+      const pdfCanvas = document.getElementById(`pdf-canvas-${itemId}`);
+
+      // Remove existing zone overlays
+      container.querySelectorAll('.zone-overlay').forEach(el => el.remove());
+
+      const page = await state.pdf.getPage(pageNum);
+      const dpr = window.devicePixelRatio || 1;
+      const wrapperEl = document.getElementById(`pdf-wrapper-${itemId}`);
+      const availableWidth = wrapperEl?.clientWidth || container.clientWidth || (window.innerWidth - 48);
+      const desiredWidth = Math.min(availableWidth, 600);
+      const unscaled = page.getViewport({ scale: 1 });
+      const scale = desiredWidth / unscaled.width;
+      const viewport = page.getViewport({ scale });
+
+      // HiDPI canvas
+      pdfCanvas.width = Math.round(viewport.width * dpr);
+      pdfCanvas.height = Math.round(viewport.height * dpr);
+      pdfCanvas.style.width = viewport.width + 'px';
+      pdfCanvas.style.height = viewport.height + 'px';
+
+      const ctx = pdfCanvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      state.currentPage = pageNum;
+
+      // Update nav
+      document.getElementById(`pdf-pageinfo-${itemId}`).textContent = `Page ${pageNum} of ${state.numPages}`;
+      document.getElementById(`pdf-prev-${itemId}`).disabled = (pageNum <= 1);
+      document.getElementById(`pdf-next-${itemId}`).disabled = (pageNum >= state.numPages);
+
+      // Nav bar height offset
+      const navEl = document.getElementById(`pdf-nav-${itemId}`);
+      const navH = navEl ? navEl.offsetHeight : 0;
+
+      // Render zone overlays for this page (zones use 0-indexed pages)
+      const zones = itemZones[itemId] || [];
+      const pageZones = zones.filter(z => z.page === pageNum - 1);
+
+      for (const z of pageZones) {
+        const oX = z.x / 100 * viewport.width;
+        const oY = z.y / 100 * viewport.height;
+        const oW = z.w / 100 * viewport.width;
+        const oH = z.h / 100 * viewport.height;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'zone-overlay absolute rounded-sm';
+        overlay.dataset.zoneId = z.id;
+        overlay.dataset.zoneType = z.zone_type;
+        overlay.style.left = oX + 'px';
+        overlay.style.top = (navH + oY) + 'px';
+        overlay.style.width = oW + 'px';
+        overlay.style.height = oH + 'px';
+
+        if (z.zone_type === 'signature') {
+          overlay.className += ' border-2 border-dashed border-purple-400 bg-purple-50 bg-opacity-30';
+          const canvas = document.createElement('canvas');
+          canvas.style.width = '100%';
+          canvas.style.height = '100%';
+          canvas.width = Math.round(oW * dpr);
+          canvas.height = Math.round(oH * dpr);
+          canvas.style.touchAction = 'none';
+          canvas.className = 'cursor-crosshair';
+          overlay.appendChild(canvas);
+
+          // Label
+          const label = document.createElement('p');
+          label.className = 'text-xs text-purple-600 mt-0.5 text-center pointer-events-none';
+          label.style.cssText = 'position:absolute;bottom:-18px;left:0;right:0;';
+          label.textContent = z.label;
+          overlay.appendChild(label);
+
+          container.appendChild(overlay);
+          zoneSigPads[z.id] = new SignaturePad(canvas, {
+            backgroundColor: 'rgba(0,0,0,0)',
+            penColor: '#1a1a2e',
+            minWidth: 0.5,
+            maxWidth: 1.5,
+          });
+        } else if (z.zone_type === 'text') {
+          overlay.className += ' border-2 border-blue-300 bg-blue-50 bg-opacity-50';
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.placeholder = z.label;
+          input.value = z.value || '';
+          input.dataset.zoneId = z.id;
+          input.className = 'w-full h-full bg-transparent text-sm px-1 outline-none';
+          overlay.appendChild(input);
+          container.appendChild(overlay);
+        } else if (z.zone_type === 'date') {
+          overlay.className += ' border-2 border-green-300 bg-green-50 bg-opacity-50';
+          const input = document.createElement('input');
+          input.type = 'date';
+          input.value = z.value || '';
+          input.dataset.zoneId = z.id;
+          input.className = 'w-full h-full bg-transparent text-sm px-1 outline-none';
+          overlay.appendChild(input);
+          container.appendChild(overlay);
+        }
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Zone submission
+    // -----------------------------------------------------------------------
+
+    async function submitAllZones(itemId) {
+      const btn = document.getElementById(`submit-zones-btn-${itemId}`);
+      const statusEl = document.getElementById(`zone-status-${itemId}`);
+      btn.disabled = true;
+      btn.style.opacity = '0.5';
+      statusEl.textContent = 'Submitting...';
+      statusEl.classList.remove('hidden', 'text-red-500');
+
+      try {
+        const zones = itemZones[itemId] || [];
+        const zoneValues = {};
+        const sigKeys = {};
+
+        // Collect text/date values from inputs
+        for (const z of zones) {
+          if (z.zone_type === 'text' || z.zone_type === 'date') {
+            const input = document.querySelector(`[data-zone-id="${z.id}"] input, input[data-zone-id="${z.id}"]`);
+            if (input) zoneValues[z.id] = input.value;
+          }
+        }
+
+        // Upload signatures
+        for (const z of zones) {
+          if (z.zone_type === 'signature') {
+            const pad = zoneSigPads[z.id];
+            if (pad && !pad.isEmpty()) {
+              statusEl.textContent = `Uploading signature (${z.label})...`;
+              const dataUrl = pad.toDataURL('image/png');
+              const res = await fetch(`/portal/r/${TOKEN}/items/${itemId}/upload-sig`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: dataUrl }),
+              });
+              if (!res.ok) throw new Error(`Signature upload failed for ${z.label}`);
+              const { file_key } = await res.json();
+              sigKeys[z.id] = file_key;
+            }
+          }
+        }
+
+        // Submit all values
+        statusEl.textContent = 'Saving...';
+        const submitRes = await fetch(`/portal/r/${TOKEN}/items/${itemId}/zones/submit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ zone_values: zoneValues, signature_keys: sigKeys }),
+        });
+        if (!submitRes.ok) throw new Error('Failed to save');
+
+        markItemComplete(itemId, 'Submitted — awaiting review');
+      } catch (err) {
+        statusEl.textContent = `Error: ${err.message}. Please try again.`;
+        statusEl.classList.add('text-red-500');
+        btn.disabled = false;
+        btn.style.opacity = '0.9';
       }
     }
   </script>
