@@ -1,0 +1,33 @@
+{
+  "campaign_name": "conveyancing-q1-2026",
+  "instantly_campaign_id": "PENDING",
+  "apollo": {
+    "person_titles": [
+      "CEO", "MD", "Managing Director", "Founder", "Co-Founder",
+      "COO", "Commercial Director", "Head of Sales", "Sales Director",
+      "VP Sales", "Director of Sales", "Partner", "Senior Partner"
+    ],
+    "person_seniorities": ["owner", "founder", "c_suite", "vp", "director"],
+    "organization_search": {
+      "q_organization_keyword_tags": [
+        "conveyancing", "property law", "residential conveyancing",
+        "property solicitors", "commercial conveyancing", "remortgage",
+        "property transactions"
+      ],
+      "organization_locations": ["United Kingdom"],
+      "organization_num_employees_ranges": ["5,500"]
+    }
+  },
+  "personalisation": {
+    "template_context": "HumTech offers a done-for-you AI Revenue Engine for conveyancing and property law firms — AI booking bot that converts property enquiries into instructed matters, speed-to-lead automation so no enquiry goes cold (critical in conveyancing where the first firm to respond wins the instruction), sales process improvement, and full ad management. They only get paid when revenue goes up.",
+    "sector_hints": {
+      "type_of_company": "conveyancing and property law firms",
+      "ref_service": "conveyancing and property transactions",
+      "reference_outcome": "converting property enquiries into instructed matters",
+      "industry_name": "conveyancing"
+    }
+  },
+  "limits": {
+    "leads_per_run": 40
+  }
+}

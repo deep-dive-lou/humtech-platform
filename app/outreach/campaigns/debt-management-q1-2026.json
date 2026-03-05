@@ -1,0 +1,29 @@
+{
+  "campaign_name": "debt-management-q1-2026",
+  "instantly_campaign_id": "76fc48b8-aa92-426e-8291-212fa3b4ee39",
+  "apollo": {
+    "person_titles": [
+      "CEO", "MD", "Managing Director", "Founder", "Co-Founder",
+      "COO", "Commercial Director", "Head of Sales", "Sales Director",
+      "VP Sales", "Director of Sales"
+    ],
+    "person_seniorities": ["owner", "founder", "c_suite", "vp", "director"],
+    "organization_search": {
+      "q_organization_keyword_tags": ["debt management", "debt consolidation", "debt advice", "debt solutions", "IVA", "debt recovery", "insolvency", "credit repair", "debt counselling", "DMP", "debt relief", "individual voluntary arrangement", "trust deed", "bankruptcy advice"],
+      "organization_locations": ["United Kingdom"],
+      "organization_num_employees_ranges": ["5,500"]
+    }
+  },
+  "personalisation": {
+    "template_context": "HumTech offers a done-for-you AI Revenue Engine for debt management and consolidation firms — AI booking bot that converts enquiries into consultations, speed-to-lead automation so no enquiry goes cold, sales process improvement, and full ad management. They only get paid when revenue goes up.",
+    "sector_hints": {
+      "type_of_company": "debt management and consolidation firms",
+      "ref_service": "debt advice and consolidation",
+      "reference_outcome": "booking consultations and becoming clients",
+      "industry_name": "debt management"
+    }
+  },
+  "limits": {
+    "leads_per_run": 40
+  }
+}

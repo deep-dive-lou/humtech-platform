@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from app.db import get_pool
 from app.outreach import models
-from app.outreach.pipeline import load_campaign_config, run_pipeline
+from app.outreach.pipeline import list_campaigns, load_campaign_config, run_pipeline
 from app.outreach.sender import push_to_instantly
 
 logger = logging.getLogger(__name__)
@@ -116,10 +116,16 @@ async def preview_send(batch_date: Optional[str] = None):
         for lead in leads
     ]
 
-    config = load_campaign_config()
+    # Group by campaign for preview
+    campaigns_seen = set(lead.get("campaign_name") or "default" for lead in leads)
+    campaign_ids = {}
+    for cname in campaigns_seen:
+        cfg = load_campaign_config(cname) if cname != "default" else load_campaign_config()
+        campaign_ids[cname] = cfg.get("instantly_campaign_id")
+
     return {
         "ok": True,
-        "campaign_id": config.get("instantly_campaign_id"),
+        "campaign_ids": campaign_ids,
         "count": len(instantly_leads),
         "leads": instantly_leads,
     }
@@ -144,11 +150,12 @@ async def test_send(body: TestSendRequest, batch_date: Optional[str] = None):
     test_lead = dict(leads[0])
     test_lead["email"] = body.test_email
 
-    config = load_campaign_config()
+    cname = test_lead.get("campaign_name")
+    config = load_campaign_config(cname) if cname else load_campaign_config()
     campaign_id = config.get("instantly_campaign_id")
     result = await push_to_instantly([test_lead], campaign_id=campaign_id)
 
-    return {"ok": True, "test_email": body.test_email, **result}
+    return {"ok": True, "test_email": body.test_email, "campaign": cname, **result}
 
 
 # ---------------------------------------------------------------------------
@@ -166,20 +173,32 @@ async def send_batch(batch_date: Optional[str] = None):
     if not leads:
         return {"ok": True, "sent": 0, "failed": 0, "message": "No sendable leads for this date"}
 
-    config = load_campaign_config()
-    campaign_id = config.get("instantly_campaign_id")
-    result = await push_to_instantly(leads, campaign_id=campaign_id)
+    # Group leads by campaign and send to the correct Instantly campaign
+    by_campaign: dict[str, list[dict]] = {}
+    for lead in leads:
+        cname = lead.get("campaign_name") or "default"
+        by_campaign.setdefault(cname, []).append(lead)
 
-    async with pool.acquire() as conn:
-        for lead in leads:
-            if result["failed"] == 0:
-                await models.mark_lead_sent(conn, lead["lead_id"])
-                await models.log_event(conn, lead_id=lead["lead_id"], event_type="sent")
-            else:
-                await models.mark_lead_failed(conn, lead["lead_id"])
-                await models.log_event(conn, lead_id=lead["lead_id"], event_type="failed")
+    total_sent = 0
+    total_failed = 0
+    for cname, campaign_leads in by_campaign.items():
+        config = load_campaign_config(cname) if cname != "default" else load_campaign_config()
+        campaign_id = config.get("instantly_campaign_id")
+        result = await push_to_instantly(campaign_leads, campaign_id=campaign_id)
 
-    return {"ok": True, **result}
+        async with pool.acquire() as conn:
+            for lead in campaign_leads:
+                if result["failed"] == 0:
+                    await models.mark_lead_sent(conn, lead["lead_id"])
+                    await models.log_event(conn, lead_id=lead["lead_id"], event_type="sent")
+                else:
+                    await models.mark_lead_failed(conn, lead["lead_id"])
+                    await models.log_event(conn, lead_id=lead["lead_id"], event_type="failed")
+
+        total_sent += result.get("sent", 0)
+        total_failed += result.get("failed", 0)
+
+    return {"ok": True, "sent": total_sent, "failed": total_failed}
 
 
 # ---------------------------------------------------------------------------
@@ -187,10 +206,30 @@ async def send_batch(batch_date: Optional[str] = None):
 # ---------------------------------------------------------------------------
 
 @router.post("/pipeline/run")
-async def trigger_pipeline(batch_date: Optional[str] = None):
+async def trigger_pipeline(batch_date: Optional[str] = None, campaign: Optional[str] = None):
+    """Run pipeline for a specific campaign, or all campaigns if none specified."""
     today = date.fromisoformat(batch_date) if batch_date else date.today()
-    stats = await run_pipeline(batch_date=today)
-    return {"ok": True, "stats": stats}
+
+    if campaign:
+        stats = await run_pipeline(batch_date=today, campaign=campaign)
+        return {"ok": True, "stats": stats}
+
+    # No campaign specified — run all available campaigns sequentially
+    campaigns = list_campaigns()
+    if not campaigns:
+        stats = await run_pipeline(batch_date=today)
+        return {"ok": True, "stats": stats}
+
+    all_stats = []
+    for c in campaigns:
+        config = load_campaign_config(c)
+        if config.get("instantly_campaign_id") == "PENDING":
+            logger.info("Skipping campaign %s — instantly_campaign_id is PENDING", c)
+            continue
+        stats = await run_pipeline(batch_date=today, campaign=c)
+        all_stats.append(stats)
+
+    return {"ok": True, "campaigns_run": len(all_stats), "stats": all_stats}
 
 
 # ---------------------------------------------------------------------------

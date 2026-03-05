@@ -43,7 +43,8 @@ APOLLO_TITLES = [
 ]
 APOLLO_SENIORITIES = ["owner", "founder", "c_suite", "vp", "director"]
 
-CAMPAIGN_CONFIG_PATH = Path(__file__).parent / "campaign.json"
+CAMPAIGNS_DIR = Path(__file__).parent / "campaigns"
+_LEGACY_CONFIG_PATH = Path(__file__).parent / "campaign.json"
 
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
 
@@ -85,17 +86,52 @@ async def _call_claude_with_retry(client: AsyncAnthropic, max_retries: int = 3, 
             raise
 
 
-def load_campaign_config() -> dict[str, Any]:
-    """Load active campaign config. Falls back to empty dict if missing/invalid."""
+def load_campaign_config(campaign: Optional[str] = None) -> dict[str, Any]:
+    """Load campaign config by name from campaigns/ dir, or legacy campaign.json."""
     try:
-        if CAMPAIGN_CONFIG_PATH.exists():
-            with open(CAMPAIGN_CONFIG_PATH) as f:
+        if campaign and CAMPAIGNS_DIR.is_dir():
+            path = CAMPAIGNS_DIR / f"{campaign}.json"
+            if path.exists():
+                with open(path) as f:
+                    config = json.load(f)
+                logger.info("Loaded campaign config: %s", config.get("campaign_name", campaign))
+                return config
+            logger.error("Campaign file not found: %s", path)
+            return {}
+        # Try campaigns/ dir — if only one file, use it; otherwise require name
+        if CAMPAIGNS_DIR.is_dir():
+            files = sorted(CAMPAIGNS_DIR.glob("*.json"))
+            if len(files) == 1:
+                with open(files[0]) as f:
+                    config = json.load(f)
+                logger.info("Loaded campaign config: %s", config.get("campaign_name", "unnamed"))
+                return config
+            if files:
+                logger.error("Multiple campaigns found — specify one: %s", [f.stem for f in files])
+                return {}
+        # Backward compat: legacy single file
+        if _LEGACY_CONFIG_PATH.exists():
+            with open(_LEGACY_CONFIG_PATH) as f:
                 config = json.load(f)
-            logger.info("Loaded campaign config: %s", config.get("campaign_name", "unnamed"))
+            logger.info("Loaded legacy campaign config: %s", config.get("campaign_name", "unnamed"))
             return config
     except Exception as e:
-        logger.error("Failed to load campaign.json: %s — using defaults", e)
+        logger.error("Failed to load campaign config: %s — using defaults", e)
     return {}
+
+
+def list_campaigns() -> list[str]:
+    """Return names of all available campaigns."""
+    if CAMPAIGNS_DIR.is_dir():
+        return sorted(f.stem for f in CAMPAIGNS_DIR.glob("*.json"))
+    if _LEGACY_CONFIG_PATH.exists():
+        try:
+            with open(_LEGACY_CONFIG_PATH) as f:
+                config = json.load(f)
+            return [config.get("campaign_name", "default")]
+        except Exception:
+            pass
+    return []
 
 # ---------------------------------------------------------------------------
 # Lead sourcing — Apollo (two-step: org search → people search)
@@ -576,12 +612,12 @@ Truth rules — non-negotiable:
 # Main pipeline entry point
 # ---------------------------------------------------------------------------
 
-async def run_pipeline(batch_date: Optional[date] = None) -> dict[str, Any]:
+async def run_pipeline(batch_date: Optional[date] = None, campaign: Optional[str] = None) -> dict[str, Any]:
     """
     Full pipeline: source → enrich → personalise → store.
-    Returns summary stats.
+    Returns summary stats. Pass campaign name to run a specific campaign.
     """
-    config = load_campaign_config()
+    config = load_campaign_config(campaign)
     today = batch_date or date.today()
     lead_target = config.get("limits", {}).get("leads_per_run", 40)
     # Over-source by 50% to compensate for no-email + dedup losses
@@ -675,6 +711,7 @@ async def run_pipeline(batch_date: Optional[date] = None) -> dict[str, Any]:
             lead_id = await insert_lead(
                 conn,
                 batch_date=today,
+                campaign_name=config.get("campaign_name"),
                 **{k: lead[k] for k in lead},
             )
             if not lead_id:

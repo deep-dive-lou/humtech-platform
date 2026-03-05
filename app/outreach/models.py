@@ -22,9 +22,10 @@ INSERT_LEAD_SQL = """
 INSERT INTO outreach.leads (
     email, first_name, last_name, title,
     company, company_domain, linkedin_url,
-    industry, employee_count, city, apollo_id, batch_date
+    industry, employee_count, city, apollo_id, batch_date,
+    campaign_name
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 ON CONFLICT (email) DO NOTHING
 RETURNING lead_id::text;
 """
@@ -62,6 +63,7 @@ SELECT
     l.title,
     l.company,
     l.company_domain,
+    l.campaign_name,
     p.personalisation_id::text,
     p.opener_first_line,
     p.edited_opener,
@@ -116,6 +118,7 @@ SELECT
     l.email,
     l.company,
     l.company_domain,
+    l.campaign_name,
     COALESCE(p.edited_opener, p.opener_first_line) AS opener
 FROM outreach.leads l
 JOIN outreach.personalisation p ON p.lead_id = l.lead_id
@@ -165,6 +168,7 @@ async def insert_lead(
     city: Optional[str],
     apollo_id: Optional[str],
     batch_date: date,
+    campaign_name: Optional[str] = None,
 ) -> Optional[str]:
     """Insert lead, returns lead_id or None if email already exists."""
     return await conn.fetchval(
@@ -172,6 +176,7 @@ async def insert_lead(
         email, first_name, last_name, title,
         company, company_domain, linkedin_url,
         industry, employee_count, city, apollo_id, batch_date,
+        campaign_name,
     )
 
 
