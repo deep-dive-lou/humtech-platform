@@ -1038,6 +1038,10 @@
       const displayW = canvasRect.width;
       const displayH = canvasRect.height;
 
+      // DEBUG: red border on canvas, add coordinate labels to zones
+      pdfCanvas.style.outline = '2px solid red';
+      canvasWrap.style.outline = '2px dashed blue';
+
       // DEBUG: Show dimensions on page (temporary — remove after fixing)
       let dbg = document.getElementById('zone-debug');
       if (!dbg) {
@@ -1047,18 +1051,18 @@
         document.body.appendChild(dbg);
       }
       const z0 = pageZones[0] || {};
+      // After zones are placed, measure their actual screen positions
+      const canvasScreenTop = pdfCanvas.getBoundingClientRect().top;
+      const wrapScreenTop = canvasWrap.getBoundingClientRect().top;
       dbg.textContent = [
         `dpr=${dpr} innerW=${window.innerWidth}`,
-        `container.clientW=${containerEl?.clientWidth}`,
         `cssW=${cssW} cssH=${cssH}`,
-        `canvas.offsetW=${pdfCanvas.offsetWidth} offsetH=${pdfCanvas.offsetHeight}`,
         `canvasRect=${Math.round(canvasRect.width)}x${Math.round(canvasRect.height)}`,
-        `wrapRect=${Math.round(wrapRect.width)}x${Math.round(wrapRect.height)}`,
-        `canvas.style.w=${pdfCanvas.style.width} h=${pdfCanvas.style.height}`,
-        `wrap.style.w=${canvasWrap.style.width} h=${canvasWrap.style.height}`,
-        `zone0: x=${z0.x} y=${z0.y} w=${z0.w} h=${z0.h}`,
-        `zone0px: l=${Math.round(z0.x/100*displayW)} t=${Math.round(z0.y/100*displayH)}`,
-        `wrap.pos=${getComputedStyle(canvasWrap).position}`,
+        `canvas.screenTop=${Math.round(canvasScreenTop)} wrap.screenTop=${Math.round(wrapScreenTop)}`,
+        `zone0: x=${z0.x}% y=${z0.y}% → left=${Math.round(z0.x/100*displayW)}px top=${Math.round(z0.y/100*displayH)}px`,
+        `zone0 EXPECTED: ${z0.x}% from left, ${z0.y}% from top of PDF`,
+        `canvasWrap children: ${canvasWrap.children.length}`,
+        `canvasWrap.scrollTop=${canvasWrap.scrollTop} container.scrollTop=${containerEl?.scrollTop}`,
       ].join('\n');
 
       for (const z of pageZones) {
@@ -1072,6 +1076,12 @@
         overlay.dataset.zoneId = z.id;
         overlay.dataset.zoneType = z.zone_type;
         overlay.style.left = oX + 'px';
+        // DEBUG: bright background + coordinate label
+        overlay.style.background = 'rgba(255,0,0,0.3)';
+        const coordLabel = document.createElement('div');
+        coordLabel.style.cssText = 'position:absolute;top:-14px;left:0;font:bold 9px monospace;color:red;white-space:nowrap;';
+        coordLabel.textContent = `${z.zone_type}@${Math.round(oX)},${Math.round(oY)}`;
+        overlay.appendChild(coordLabel);
         overlay.style.top = oY + 'px';
         overlay.style.width = oW + 'px';
         overlay.style.height = oH + 'px';
