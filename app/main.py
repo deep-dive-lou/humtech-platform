@@ -1,8 +1,12 @@
 import logging
+import os
 import sys
+import traceback
 
+import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
@@ -30,6 +34,11 @@ from .portal.auth import NotAuthenticated
 
 app = FastAPI(title="HumTech Platform", version="0.2.0")
 load_dotenv()
+
+_error_templates = Jinja2Templates(
+    directory=os.path.join(os.path.dirname(__file__), "portal", "templates")
+)
+logger = logging.getLogger("humtech.errors")
 app.include_router(engine_webhooks_router)
 app.include_router(outreach_router)
 app.include_router(bot_webhook_router)
@@ -46,6 +55,62 @@ async def _portal_auth_handler(request: Request, exc: NotAuthenticated):
 @app.exception_handler(OptimiserNotAuthenticated)
 async def _optimiser_auth_handler(request: Request, exc: OptimiserNotAuthenticated):
     return RedirectResponse(url="/optimiser/login", status_code=303)
+
+
+async def _send_slack_error(request: Request, status_code: int, detail: str):
+    """Fire-and-forget Slack alert for server errors."""
+    webhook_url = settings.slack_webhook_url
+    if not webhook_url:
+        return
+    try:
+        text = (
+            f":rotating_light: *{status_code} Error* on `{request.method} {request.url.path}`\n"
+            f"```{detail[:1500]}```"
+        )
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.post(webhook_url, json={"text": text})
+    except Exception:
+        logger.warning("Failed to send Slack error alert", exc_info=True)
+
+
+def _is_portal_request(request: Request) -> bool:
+    host = request.headers.get("host", "")
+    return host.startswith("portal.") or request.url.path.startswith("/portal/")
+
+
+def _render_error(request: Request, status_code: int, title: str, message: str):
+    return _error_templates.TemplateResponse(
+        "error.html",
+        {"request": request, "status_code": status_code, "title": title, "message": message},
+        status_code=status_code,
+    )
+
+
+@app.exception_handler(500)
+async def _server_error_handler(request: Request, exc: Exception):
+    tb = traceback.format_exception(type(exc), exc, exc.__traceback__)
+    detail = "".join(tb)
+    logger.error("Unhandled 500 on %s %s:\n%s", request.method, request.url.path, detail)
+    await _send_slack_error(request, 500, detail)
+    if _is_portal_request(request):
+        return _render_error(
+            request, 500,
+            "Something went wrong",
+            "We hit an unexpected error. The team has been notified and we're looking into it.",
+        )
+    return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
+
+
+@app.exception_handler(404)
+async def _not_found_handler(request: Request, exc: HTTPException):
+    if _is_portal_request(request):
+        return _render_error(
+            request, 404,
+            "Page not found",
+            "The page you're looking for doesn't exist or has been moved.",
+        )
+    return JSONResponse(status_code=404, content={"detail": "Not Found"})
+
 
 @app.on_event("startup")
 async def _startup():
