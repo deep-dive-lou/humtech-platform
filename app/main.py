@@ -23,6 +23,9 @@ from .outreach.routes import router as outreach_router
 from .bot.webhook import router as bot_webhook_router
 from .portal.routes import router as portal_router
 from .portal.staff_routes import router as portal_staff_router
+from .optimiser.routes import router as optimiser_router
+from .optimiser.api import router as optimiser_api_router
+from .optimiser.auth import router as optimiser_auth_router, OptimiserNotAuthenticated
 from .portal.auth import NotAuthenticated
 
 app = FastAPI(title="HumTech Platform", version="0.2.0")
@@ -32,10 +35,17 @@ app.include_router(outreach_router)
 app.include_router(bot_webhook_router)
 app.include_router(portal_router)
 app.include_router(portal_staff_router)
+app.include_router(optimiser_auth_router)
+app.include_router(optimiser_router)
+app.include_router(optimiser_api_router)
 
 @app.exception_handler(NotAuthenticated)
 async def _portal_auth_handler(request: Request, exc: NotAuthenticated):
     return RedirectResponse(url="/portal/staff/login", status_code=303)
+
+@app.exception_handler(OptimiserNotAuthenticated)
+async def _optimiser_auth_handler(request: Request, exc: OptimiserNotAuthenticated):
+    return RedirectResponse(url="/optimiser/login", status_code=303)
 
 @app.on_event("startup")
 async def _startup():

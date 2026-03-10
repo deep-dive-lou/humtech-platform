@@ -1,0 +1,66 @@
+{% extends "_base.html" %}
+{% block nav_active %}experiments{% endblock %}
+{% block title %}Experiments — Optimisation Engine{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-8">
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900">Experiments</h1>
+    <p class="text-sm text-gray-500 mt-1">Multivariate tests across your marketing elements</p>
+  </div>
+  <a href="/optimiser/new"
+     class="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors">
+    <i data-lucide="plus" class="w-4 h-4"></i>
+    New Experiment
+  </a>
+</div>
+
+{% if experiments %}
+<div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+  <table class="w-full">
+    <thead class="bg-gray-50 border-b border-gray-200">
+      <tr>
+        <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Name</th>
+        <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Mode</th>
+        <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Status</th>
+        <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Created</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for exp in experiments %}
+      <tr class="hover:bg-gray-50 transition-colors cursor-pointer" onclick="window.location='/optimiser/experiments/{{ exp.experiment_id }}'">
+        <td class="px-6 py-4">
+          <p class="text-sm font-medium text-gray-900">{{ exp.name }}</p>
+          {% if exp.description %}<p class="text-xs text-gray-500 mt-0.5">{{ exp.description }}</p>{% endif %}
+        </td>
+        <td class="px-6 py-4">
+          <span class="text-xs font-medium px-2 py-1 rounded-full
+            {% if exp.mode == 'bandit' %}bg-blue-50 text-blue-700
+            {% elif exp.mode == 'taguchi' %}bg-amber-50 text-amber-700
+            {% else %}bg-purple-50 text-purple-700{% endif %}">
+            {{ exp.mode | capitalize }}
+          </span>
+        </td>
+        <td class="px-6 py-4">
+          <span class="text-xs font-medium px-2 py-1 rounded-full
+            {% if exp.status == 'running' %}bg-green-50 text-green-700
+            {% elif exp.status == 'completed' %}bg-gray-100 text-gray-600
+            {% elif exp.status == 'paused' %}bg-yellow-50 text-yellow-700
+            {% else %}bg-gray-50 text-gray-500{% endif %}">
+            {{ exp.status | capitalize }}
+          </span>
+        </td>
+        <td class="px-6 py-4 text-sm text-gray-500">{{ exp.created_at.strftime('%d %b %Y') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="text-center py-16 bg-white rounded-xl border border-gray-200">
+  <i data-lucide="flask-conical" class="w-12 h-12 text-gray-300 mx-auto mb-4"></i>
+  <p class="text-gray-500 text-sm">No experiments yet</p>
+  <a href="/optimiser/new" class="text-sm text-blue-600 hover:text-blue-800 mt-2 inline-block">Create your first experiment</a>
+</div>
+{% endif %}
+{% endblock %}

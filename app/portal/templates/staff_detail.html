@@ -1,95 +1,106 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{ req.client_name }} — HumTech Portal</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+{% extends "_base.html" %}
+
+{% block title %}{{ req.client_name }} — {{ brand.brand_name or 'HumTech' }} Portal{% endblock %}
+
+{% block nav_active %}requests{% endblock %}
+
+{% block head %}
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
-</head>
-<body class="bg-gray-50 text-gray-900 min-h-screen">
+{% endblock %}
 
-  {% from "_nav.html" import staff_nav %}
-  {{ staff_nav(staff, active='requests') }}
+{% block content %}
 
-  <!-- Sub-header with request info -->
-  <div class="bg-white border-b border-gray-200">
-    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+  {% set bc = brand.brand_color or '#111827' %}
+
+  <!-- Sub-header -->
+  <div class="-mx-10 -mt-8 bg-white border-b border-gray-200">
+    <div class="px-10 py-5 flex items-center justify-between">
       <div class="flex items-center gap-3">
-        <a href="/portal/staff/requests" class="text-sm text-gray-400 hover:text-gray-900">&larr; Requests</a>
+        <a href="/portal/staff/requests" class="text-base text-gray-400 hover:text-gray-900">&larr; Requests</a>
         <span class="text-gray-200">|</span>
-        <h1 class="text-lg font-semibold">{{ req.client_name }}</h1>
+        <h1 class="text-xl font-bold">{{ req.client_name }}</h1>
         {% set s = req.status %}
         {% if s == "draft" %}
-          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">Draft</span>
+          <span class="inline-flex items-center px-3 py-1 rounded-lg text-sm font-semibold bg-gray-100 text-gray-600">Draft</span>
         {% elif s == "sent" %}
-          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">Sent</span>
+          <span class="inline-flex items-center px-3 py-1 rounded-lg text-sm font-semibold bg-blue-50 text-blue-700">Sent</span>
         {% elif s == "viewed" %}
-          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">Viewed</span>
+          <span class="inline-flex items-center px-3 py-1 rounded-lg text-sm font-semibold bg-indigo-50 text-indigo-700">Viewed</span>
         {% elif s == "in_progress" %}
-          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">In progress</span>
+          <span class="inline-flex items-center px-3 py-1 rounded-lg text-sm font-semibold bg-yellow-50 text-yellow-700">In progress</span>
         {% elif s == "completed" %}
-          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Completed</span>
-        {% elif s == "cancelled" %}
-          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-500">Cancelled</span>
+          <span class="inline-flex items-center px-3 py-1 rounded-lg text-sm font-semibold bg-green-50 text-green-700">Completed</span>
+        {% elif s == "closed" %}
+          <span class="inline-flex items-center px-3 py-1 rounded-lg text-sm font-semibold bg-red-50 text-red-500">Closed</span>
         {% else %}
-          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">{{ s }}</span>
+          <span class="inline-flex items-center px-3 py-1 rounded-lg text-sm font-semibold bg-gray-100 text-gray-500">{{ s }}</span>
         {% endif %}
       </div>
       <div class="flex items-center gap-3">
-        {% if req.status not in ['completed', 'cancelled'] %}
-        {% if email_enabled %}
-        <button
-          id="sendEmailBtn"
-          onclick="sendEmail()"
-          class="text-sm font-medium bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors"
-        >
-          Send to client
-        </button>
+        {% if req.status not in ['completed', 'closed'] %}
+          {% if email_enabled %}
+          <button
+            id="sendEmailBtn"
+            onclick="sendEmail()"
+            class="text-base font-medium bg-gray-900 text-white px-5 py-2.5 rounded-lg hover:bg-gray-700 transition-colors"
+          >
+            Send to client
+          </button>
+          {% else %}
+          <button
+            id="copyLinkBtn"
+            onclick="generateLink()"
+            class="text-base font-medium bg-gray-900 text-white px-5 py-2.5 rounded-lg hover:bg-gray-700 transition-colors"
+          >
+            Copy link
+          </button>
+          {% endif %}
+          <button
+            onclick="closeRequest('close')"
+            class="text-base font-medium border border-gray-300 text-gray-600 px-5 py-2.5 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Close
+          </button>
         {% endif %}
-        <button
-          id="copyLinkBtn"
-          onclick="generateLink()"
-          class="text-sm font-medium {{ 'border border-gray-300 text-gray-600 hover:bg-gray-50' if email_enabled else 'bg-gray-900 text-white hover:bg-gray-700' }} px-4 py-2 rounded-lg transition-colors"
-        >
-          Copy link
-        </button>
-        <button
-          onclick="closeRequest('complete')"
-          class="text-xs font-medium px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-        >
-          Complete
-        </button>
-        <button
-          onclick="closeRequest('cancel')"
-          class="text-xs font-medium px-3 py-1.5 border border-gray-300 text-gray-500 rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          Cancel
-        </button>
-        {% elif req.status in ['completed', 'cancelled'] and staff.role == 'admin' %}
-        <button
-          onclick="reopenRequest()"
-          class="text-xs font-medium px-3 py-1.5 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          Reopen
-        </button>
-        {% endif %}
-        {% if req.status in ['draft', 'cancelled'] and staff.role == 'admin' %}
-        <button
-          onclick="deleteRequest()"
-          class="text-xs text-red-400 hover:text-red-600 px-2 py-1.5"
-        >
-          Delete
-        </button>
-        {% endif %}
+
+        <!-- Overflow menu -->
+        <div class="relative">
+          <button onclick="toggleOverflow()" id="overflowBtn"
+            class="w-9 h-9 flex items-center justify-center rounded-lg border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-colors">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><circle cx="10" cy="4" r="1.5"/><circle cx="10" cy="10" r="1.5"/><circle cx="10" cy="16" r="1.5"/></svg>
+          </button>
+          <div id="overflowMenu" class="hidden absolute right-0 top-full mt-1 w-48 bg-white rounded-lg border border-gray-200 shadow-lg py-1 z-50">
+            {% if req.status not in ['completed', 'closed'] %}
+              {% if email_enabled %}
+              <button id="copyLinkBtn" onclick="generateLink()" class="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+                Copy link
+              </button>
+              {% endif %}
+              {% if all_approved %}
+              <button onclick="closeRequest('complete')" class="w-full text-left px-4 py-2.5 text-sm font-medium text-green-700 hover:bg-green-50 transition-colors">
+                Complete request
+              </button>
+              {% endif %}
+            {% elif req.status in ['completed', 'closed'] and staff.role == 'admin' %}
+              <button onclick="reopenRequest()" class="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+                Reopen
+              </button>
+            {% endif %}
+            {% if req.status in ['draft', 'closed'] %}
+              <button onclick="deleteRequest()" class="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors">
+                Delete permanently
+              </button>
+            {% endif %}
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- Draft notice -->
   {% if req.status == 'draft' %}
-  <div class="bg-amber-50 border-b border-amber-100">
-    <div class="max-w-5xl mx-auto px-6 py-2.5 flex items-center gap-2 text-sm text-amber-700">
+  <div class="-mx-10 bg-amber-50 border-b border-amber-100">
+    <div class="px-10 py-3 flex items-center gap-2 text-base text-amber-700">
       <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
       </svg>
@@ -99,14 +110,25 @@
   </div>
   {% endif %}
 
-  <!-- Ready to close banner -->
-  {% if all_approved and req.status not in ['completed', 'cancelled'] %}
-  <div class="bg-green-50 border-b border-green-100">
-    <div class="max-w-5xl mx-auto px-6 py-2.5 flex items-center gap-2 text-sm text-green-700">
-      <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-      </svg>
-      All items approved — this request is ready to be marked complete.
+
+  <!-- Progress strip -->
+  {% set total_items = items | length %}
+  {% set received_items = items | selectattr("status", "in", ["uploaded", "approved", "needs_review"]) | list | length %}
+  {% set approved_items = items | selectattr("status", "equalto", "approved") | list | length %}
+  {% if total_items > 0 %}
+  <div class="-mx-10 bg-white border-b border-gray-100">
+    <div class="px-10 py-3 flex items-center gap-4">
+      <span class="text-sm font-semibold text-gray-700">{{ received_items }} of {{ total_items }} received</span>
+      <div class="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+        {% set pct = (approved_items / total_items * 100) | round | int %}
+        {% set recv_pct = (received_items / total_items * 100) | round | int %}
+        <div class="h-full rounded-full transition-all" style="width: {{ recv_pct }}%; background: {% if pct == 100 %}#16a34a{% else %}{{ bc }}{% endif %};"></div>
+      </div>
+      {% if approved_items == total_items %}
+        <span class="text-sm font-medium text-green-600">All approved</span>
+      {% elif approved_items > 0 %}
+        <span class="text-sm text-gray-400">{{ approved_items }} approved</span>
+      {% endif %}
     </div>
   </div>
   {% endif %}
@@ -141,185 +163,261 @@
     Email sent to <span id="emailToastAddr"></span>
   </div>
 
-  <div class="max-w-5xl mx-auto px-6 py-8 space-y-8">
+  <div class="mt-6 space-y-6">
 
-    <!-- Client info -->
-    <div class="bg-white rounded-xl border border-gray-200 p-5">
-      <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Client</h2>
-      <dl class="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
-        <div><dt class="text-gray-400">Name</dt><dd class="font-medium">{{ req.client_name or "—" }}</dd></div>
-        <div><dt class="text-gray-400">Email</dt><dd>{{ req.client_email or "—" }}</dd></div>
-        <div><dt class="text-gray-400">Phone</dt><dd>{{ req.client_phone or "—" }}</dd></div>
-        <div><dt class="text-gray-400">Due date</dt><dd>{% if req.due_at %}{{ req.due_at.strftime("%d %b %Y") }}{% else %}—{% endif %}</dd></div>
-        <div><dt class="text-gray-400">Last viewed</dt><dd>{% if req.last_viewed_at %}{{ req.last_viewed_at.strftime("%d %b %Y %H:%M") }} UTC{% else %}Not yet viewed{% endif %}</dd></div>
-        <div><dt class="text-gray-400">Sent</dt><dd>{% if req.sent_at %}{{ req.sent_at.strftime("%d %b %Y") }}{% else %}Not sent{% endif %}</dd></div>
-      </dl>
+    <!-- Client info — condensed row -->
+    <div class="flex items-center justify-between py-4 border-b border-gray-100">
+      <div class="flex items-center gap-4">
+        <div class="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-base flex-shrink-0" style="background-color: {{ bc }};">
+          {{ req.client_name[0] | upper if req.client_name else '?' }}
+        </div>
+        <div class="flex items-center gap-4 text-base">
+          <span class="font-semibold text-gray-900">{{ req.client_name or "—" }}</span>
+          {% if req.client_email %}
+          <span class="text-gray-400">{{ req.client_email }}</span>
+          {% endif %}
+          {% if req.client_phone %}
+          <span class="text-gray-400">{{ req.client_phone }}</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="flex items-center gap-3 text-sm text-gray-400">
+        {% if req.due_at %}
+          <span>Due {{ req.due_at.strftime("%d %b %Y") }}</span>
+        {% endif %}
+        {% if req.last_viewed_at %}
+          <span class="text-gray-200">&middot;</span>
+          <span>Viewed {{ req.last_viewed_at.strftime("%d %b") }}</span>
+        {% endif %}
+        {% if req.sent_at %}
+          <span class="text-gray-200">&middot;</span>
+          <span>Sent {{ req.sent_at.strftime("%d %b") }}</span>
+        {% endif %}
+      </div>
     </div>
 
-    <!-- Items -->
-    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div class="px-5 py-4 border-b border-gray-100">
-        <h2 class="text-sm font-semibold">Document checklist</h2>
-      </div>
-      {% if not items %}
-      <p class="px-5 py-6 text-sm text-gray-400">No items in this request.</p>
-      {% else %}
-      <div class="divide-y divide-gray-100">
-        {% for item in items %}
-        <div class="px-5 py-4" id="item-{{ item.id }}">
-          <div class="flex items-start justify-between gap-4">
-            <div class="flex-1">
-              <div class="flex items-center gap-2">
-                <p class="font-medium text-sm">{{ item.title }}</p>
-                {% if item.item_type == 'signature' %}
-                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">Sign</span>
-                {% endif %}
-                {% if item.required %}
-                  <span class="text-xs text-gray-400">required</span>
-                {% endif %}
-                <span id="status-{{ item.id }}"
-                  class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium
-                  {% if item.status == 'approved' %}bg-green-100 text-green-700
-                  {% elif item.status == 'uploaded' %}bg-blue-100 text-blue-700
-                  {% elif item.status == 'needs_review' %}bg-yellow-100 text-yellow-700
-                  {% elif item.status == 'missing' %}bg-red-50 text-red-500
-                  {% else %}bg-gray-100 text-gray-500{% endif %}"
-                >{{ item.status }}</span>
-              </div>
-              {% if item.instructions %}
-              <p class="text-xs text-gray-400 mt-1">{{ item.instructions }}</p>
-              {% endif %}
-
-              {% if item.item_type == 'signature' %}
-              <div class="mt-2 space-y-1">
-                {% if signed_pdf_urls.get(item.id | string) %}
-                <a href="{{ signed_pdf_urls[item.id | string] }}" target="_blank" class="inline-flex items-center gap-1 text-xs text-green-600 font-medium hover:underline">
-                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                  View signed document
-                </a>
-                {% endif %}
-                {% if signature_doc_urls.get(item.id | string) %}
-                <a href="{{ signature_doc_urls[item.id | string] }}" target="_blank" class="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
-                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                  View original document
-                </a>
-                {% endif %}
-                {% if not signed_pdf_urls.get(item.id | string) and signature_img_urls.get(item.id | string) %}
-                <div>
-                  <p class="text-xs text-gray-400 mb-1">Client signature:</p>
-                  <img src="{{ signature_img_urls[item.id | string] }}" alt="Signature" class="h-16 border border-gray-200 rounded bg-white p-1" />
-                </div>
-                {% endif %}
-              </div>
-              {% endif %}
-
-              {% set item_files = files_by_item.get(item.id | string, []) %}
-              {% if item_files %}
-              <div class="mt-2 space-y-1">
-                {% for f in item_files %}
-                <div class="flex items-center gap-2 text-xs text-gray-500">
-                  <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                  </svg>
-                  <a href="{{ f.download_url }}" target="_blank" class="hover:underline hover:text-gray-900">
-                    {{ f.original_filename }}
-                  </a>
-                  {% if f.size_bytes %}
-                  <span class="text-gray-300">&middot;</span>
-                  <span>{{ (f.size_bytes / 1024) | round(1) }} KB</span>
-                  {% endif %}
-                </div>
-                {% endfor %}
-              </div>
-              {% endif %}
-
-              {% set item_zones = zones_by_item.get(item.id | string, []) %}
-              {% set filled_zones = item_zones | selectattr("filled_at") | list %}
-              {% if filled_zones %}
-              <div class="mt-3">
-                <div class="flex items-center gap-3">
-                <button type="button" onclick="toggleStaffDoc('{{ item.id }}')"
-                        class="inline-flex items-center gap-2 text-xs font-medium text-blue-600 hover:text-blue-800">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-                  </svg>
-                  <span id="staff-doc-label-{{ item.id }}">View completed document</span>
-                </button>
-                <a href="/portal/staff/requests/{{ req.id }}/items/{{ item.id }}/download-completed"
-                   class="inline-flex items-center gap-1.5 text-xs font-medium text-green-600 hover:text-green-800">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                  </svg>
-                  Download PDF
-                </a>
-                </div>
-                <div id="staff-doc-wrapper-{{ item.id }}" style="display: none;" class="mt-2">
-                  <div class="relative border border-gray-200 rounded-lg bg-gray-100" id="staff-doc-container-{{ item.id }}" style="overflow: visible;">
-                    <p id="staff-doc-loading-{{ item.id }}" class="text-xs text-gray-400 p-4">Loading document...</p>
-                    <div id="staff-doc-nav-{{ item.id }}" style="display: none;"
-                         class="flex items-center justify-between bg-white border-b border-gray-200 px-3 py-1.5">
-                      <button type="button" onclick="staffDocPrev('{{ item.id }}')"
-                              id="staff-doc-prev-{{ item.id }}"
-                              class="text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed p-1">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-                        </svg>
-                      </button>
-                      <span id="staff-doc-pageinfo-{{ item.id }}" class="text-xs text-gray-500">Page 1 of 1</span>
-                      <button type="button" onclick="staffDocNext('{{ item.id }}')"
-                              id="staff-doc-next-{{ item.id }}"
-                              class="text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed p-1">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                        </svg>
-                      </button>
-                    </div>
-                    <canvas id="staff-doc-canvas-{{ item.id }}" class="block" style="max-width: 100%;"></canvas>
-                  </div>
-                </div>
-              </div>
-              {% endif %}
-            </div>
-
-            {% if req.status not in ['completed', 'cancelled'] %}
-              {% if item.status in ['uploaded', 'needs_review'] %}
-              <div class="flex items-center gap-2 flex-shrink-0">
-                <button
-                  onclick="reviewItem('{{ item.id }}', 'approve')"
-                  class="text-xs font-medium px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                >
-                  Approve
-                </button>
-                <button
-                  onclick="reviewItem('{{ item.id }}', 'reject')"
-                  class="text-xs font-medium px-3 py-1.5 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  Reject
-                </button>
-              </div>
-              {% elif item.status == 'approved' %}
-              <div class="flex-shrink-0">
-                <button
-                  onclick="reviewItem('{{ item.id }}', 'reject')"
-                  class="text-xs text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  Undo
-                </button>
-              </div>
-              {% endif %}
+    <!-- Document items — individual cards -->
+    {% if not items %}
+    <p class="text-base text-gray-400 py-6">No items in this request.</p>
+    {% else %}
+    {% for item in items %}
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden" id="item-{{ item.id }}">
+      <div class="px-6 py-4 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <h3 class="text-base font-semibold text-gray-900 truncate">{{ item.title }}</h3>
+          {% if item.item_type == 'signature' %}
+            <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-purple-50 text-purple-700 flex-shrink-0">Sign</span>
+          {% endif %}
+          {% if item.required %}
+            <span class="text-xs text-gray-400 flex-shrink-0">required</span>
+          {% endif %}
+          <!-- Status badge -->
+          <span id="status-{{ item.id }}"
+            class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold flex-shrink-0
+            {% if item.status == 'approved' %}bg-green-100 text-green-700
+            {% elif item.status == 'uploaded' %}bg-blue-100 text-blue-700
+            {% elif item.status == 'needs_review' %}bg-yellow-100 text-yellow-700
+            {% elif item.status == 'missing' %}bg-red-50 text-red-500
+            {% else %}bg-gray-100 text-gray-500{% endif %}"
+          >{{ item.status }}</span>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+          <!-- Review actions -->
+          {% if req.status not in ['completed', 'closed'] %}
+            {% if item.status in ['uploaded', 'needs_review'] %}
+            <button
+              onclick="reviewItem('{{ item.id }}', 'approve')"
+              class="text-sm font-medium px-3.5 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            >Approve</button>
+            <button
+              onclick="reviewItem('{{ item.id }}', 'reject')"
+              class="text-sm font-medium px-3.5 py-1.5 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
+            >Reject</button>
+            {% elif item.status == 'approved' %}
+            <button
+              onclick="reviewItem('{{ item.id }}', 'reject')"
+              class="text-sm text-gray-400 hover:text-gray-600 transition-colors"
+            >Undo</button>
             {% endif %}
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="px-6 pb-5">
+        {% if item.instructions %}
+        <p class="text-base text-gray-500 mb-3">{{ item.instructions }}</p>
+        {% endif %}
+
+        <!-- All doc links on one row -->
+        <div class="flex flex-wrap items-center gap-2 mt-1">
+          {% if item.item_type == 'signature' %}
+            {% if signed_pdf_urls.get(item.id | string) %}
+            <a href="{{ signed_pdf_urls[item.id | string] }}" target="_blank"
+              class="inline-flex items-center gap-2 text-sm font-medium text-green-600 hover:text-green-800 bg-green-50 px-3 py-2 rounded-lg transition-colors">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              View signed document
+            </a>
+            {% endif %}
+            {% if signature_doc_urls.get(item.id | string) %}
+            <a href="{{ signature_doc_urls[item.id | string] }}" target="_blank"
+              class="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-800 bg-blue-50 px-3 py-2 rounded-lg transition-colors">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+              View original
+            </a>
+            {% endif %}
+            {% if not signed_pdf_urls.get(item.id | string) and signature_img_urls.get(item.id | string) %}
+            <div class="flex items-center gap-2">
+              <p class="text-sm text-gray-400">Signature:</p>
+              <img src="{{ signature_img_urls[item.id | string] }}" alt="Signature" class="h-10 border border-gray-200 rounded bg-white p-0.5" />
+            </div>
+            {% endif %}
+          {% endif %}
+
+          {% set item_files = files_by_item.get(item.id | string, []) %}
+          {% for f in item_files %}
+          <a href="{{ f.download_url }}" target="_blank" class="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 bg-gray-50 px-3 py-2 rounded-lg transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            {{ f.original_filename }}{% if f.size_bytes %} <span class="text-gray-300">&middot;</span> <span class="text-gray-400">{{ (f.size_bytes / 1024) | round(1) }} KB</span>{% endif %}
+          </a>
+          {% endfor %}
+
+          {% set item_zones = zones_by_item.get(item.id | string, []) %}
+          {% set filled_zones = item_zones | selectattr("filled_at") | list %}
+          {% if filled_zones %}
+            <button type="button" onclick="toggleStaffDoc('{{ item.id }}')"
+                    class="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-800 bg-blue-50 px-3 py-2 rounded-lg transition-colors">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+              </svg>
+              <span id="staff-doc-label-{{ item.id }}">Preview</span>
+            </button>
+            <a href="/portal/staff/requests/{{ req.id }}/items/{{ item.id }}/download-completed"
+               class="inline-flex items-center gap-2 text-sm font-medium text-green-600 hover:text-green-800 bg-green-50 px-3 py-2 rounded-lg transition-colors">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+              </svg>
+              Download PDF
+            </a>
+          {% endif %}
+        </div>
+
+        {% if filled_zones %}
+          <div id="staff-doc-wrapper-{{ item.id }}" style="display: none;" class="mt-3">
+            <div class="relative border border-gray-200 rounded-lg bg-gray-50 overflow-hidden" id="staff-doc-container-{{ item.id }}" style="overflow: visible;">
+              <!-- Toolbar: zoom left / page nav center / close right -->
+              <div class="flex items-center justify-between bg-white border-b border-gray-200 px-4 py-2">
+                <div class="flex items-center gap-2">
+                  <button type="button" onclick="staffDocZoom('{{ item.id }}', -0.25)"
+                    class="text-sm font-bold border border-gray-200 w-7 h-7 rounded hover:bg-gray-50 flex items-center justify-center">&minus;</button>
+                  <span id="staff-doc-zoom-{{ item.id }}" class="text-xs font-medium text-gray-500 min-w-[40px] text-center">100%</span>
+                  <button type="button" onclick="staffDocZoom('{{ item.id }}', 0.25)"
+                    class="text-sm font-bold border border-gray-200 w-7 h-7 rounded hover:bg-gray-50 flex items-center justify-center">+</button>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button type="button" onclick="staffDocPrev('{{ item.id }}')" id="staff-doc-prev-{{ item.id }}"
+                    class="text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed w-7 h-7 flex items-center justify-center">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                  </button>
+                  <span id="staff-doc-pageinfo-{{ item.id }}" class="text-sm font-medium text-gray-600 min-w-[80px] text-center">Page 1 of 1</span>
+                  <button type="button" onclick="staffDocNext('{{ item.id }}')" id="staff-doc-next-{{ item.id }}"
+                    class="text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed w-7 h-7 flex items-center justify-center">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                  </button>
+                </div>
+                <button type="button" onclick="toggleStaffDoc('{{ item.id }}')"
+                  class="text-gray-400 hover:text-gray-700 w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 transition-colors" title="Close preview">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+              </div>
+              <p id="staff-doc-loading-{{ item.id }}" class="text-sm text-gray-400 p-4">Loading document...</p>
+              <div class="flex justify-center bg-gray-100 p-4">
+                <canvas id="staff-doc-canvas-{{ item.id }}" class="block" style="max-width: 100%;"></canvas>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    <!-- Activity timeline -->
+    {% if audit_events %}
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100">
+        <h2 class="text-base font-semibold text-gray-900">Activity</h2>
+      </div>
+      <div class="px-6 py-4">
+        <div class="relative">
+          <!-- Vertical line -->
+          <div class="absolute left-[7px] top-2 bottom-2 w-px bg-gray-200"></div>
+
+          <div class="space-y-4">
+            {% for evt in audit_events %}
+            <div class="flex items-start gap-4 relative">
+              <!-- Dot -->
+              <div class="w-4 h-4 rounded-full flex-shrink-0 mt-0.5
+                {% if evt.event_type in ['request_completed', 'item_approved'] %}bg-green-500
+                {% elif evt.event_type in ['request_closed', 'item_rejected'] %}bg-red-400
+                {% elif evt.event_type in ['magic_link_emailed', 'access_link_created'] %}bg-blue-500
+                {% elif evt.event_type == 'request_reopened' %}bg-yellow-500
+                {% else %}bg-gray-400{% endif %}
+                border-2 border-white z-10"></div>
+
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <p class="text-sm text-gray-900">
+                    {% if evt.event_type == 'access_link_created' %}Magic link generated
+                    {% elif evt.event_type == 'magic_link_emailed' %}Email sent to client
+                    {% elif evt.event_type == 'request_completed' %}Request marked complete
+                    {% elif evt.event_type == 'request_closed' %}Request closed
+                    {% elif evt.event_type == 'request_reopened' %}Request reopened
+                    {% elif evt.event_type == 'item_approved' %}Item approved
+                    {% elif evt.event_type == 'item_rejected' %}Item rejected
+                    {% elif evt.event_type == 'client_viewed' %}Client viewed the request
+                    {% elif evt.event_type == 'file_uploaded' %}Client uploaded a file
+                    {% elif evt.event_type == 'zones_submitted' %}Client submitted document fields
+                    {% else %}{{ evt.event_type | replace("_", " ") | capitalize }}
+                    {% endif %}
+                  </p>
+                  <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium
+                    {% if evt.actor == 'staff' %}bg-gray-100 text-gray-500
+                    {% else %}bg-blue-50 text-blue-600{% endif %}">{{ evt.actor }}</span>
+                </div>
+                <p class="text-xs text-gray-400 mt-0.5">{{ evt.created_at.strftime("%d %b %Y, %H:%M") }}</p>
+              </div>
+            </div>
+            {% endfor %}
           </div>
         </div>
-        {% endfor %}
       </div>
-      {% endif %}
     </div>
+    {% endif %}
 
   </div>
 
+{% endblock %}
+
+{% block scripts %}
   <script>
     const requestId = "{{ req.id }}";
+
+    // Overflow menu toggle
+    function toggleOverflow() {
+      const menu = document.getElementById('overflowMenu');
+      menu.classList.toggle('hidden');
+    }
+    // Close overflow on outside click
+    document.addEventListener('click', function(e) {
+      const btn = document.getElementById('overflowBtn');
+      const menu = document.getElementById('overflowMenu');
+      if (btn && menu && !btn.contains(e.target) && !menu.contains(e.target)) {
+        menu.classList.add('hidden');
+      }
+    });
 
     async function generateLink() {
       const btn = document.getElementById('copyLinkBtn');
@@ -352,12 +450,10 @@
         });
         const data = await res.json();
         if (!res.ok) { alert(data.error || 'Failed to send email'); return; }
-        // Show toast
         document.getElementById('emailToastAddr').textContent = data.email;
         const toast = document.getElementById('emailToast');
         toast.classList.remove('hidden');
         setTimeout(() => { toast.classList.add('hidden'); }, 4000);
-        // Reload to update status badge (draft → sent)
         setTimeout(() => { window.location.reload(); }, 1500);
       } finally {
         btn.textContent = 'Send to client';
@@ -375,7 +471,7 @@
     }
 
     async function closeRequest(action) {
-      const label = action === 'complete' ? 'mark this request as complete' : 'cancel this request';
+      const label = action === 'complete' ? 'mark this request as complete' : 'close this request';
       if (!confirm(`Are you sure you want to ${label}?`)) return;
 
       const res = await fetch(`/portal/staff/requests/${requestId}/close`, {
@@ -425,7 +521,7 @@
     }
 
     // -----------------------------------------------------------------------
-    // Staff document viewer with filled zone overlays
+    // Staff document viewer — single page with nav, zoom, zone overlays
     // -----------------------------------------------------------------------
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
@@ -442,10 +538,10 @@
       const isOpen = wrapper.style.display !== 'none';
       if (isOpen) {
         wrapper.style.display = 'none';
-        label.textContent = 'View completed document';
+        label.textContent = 'Preview';
       } else {
         wrapper.style.display = 'block';
-        label.textContent = 'Hide document';
+        label.textContent = 'Hide';
         if (!staffDocState[itemId]?.loaded) loadStaffDoc(itemId);
       }
     }
@@ -455,10 +551,8 @@
       try {
         const url = `/portal/staff/requests/${requestId}/items/${itemId}/pdf-bytes`;
         const pdf = await pdfjsLib.getDocument(url).promise;
-        staffDocState[itemId] = { pdf, currentPage: 1, numPages: pdf.numPages, loaded: true };
+        staffDocState[itemId] = { pdf, currentPage: 1, numPages: pdf.numPages, loaded: true, scale: 1.0 };
         if (loadingEl) loadingEl.style.display = 'none';
-        const nav = document.getElementById(`staff-doc-nav-${itemId}`);
-        if (nav) nav.style.display = 'flex';
         await renderStaffPage(itemId, 1);
       } catch (err) {
         console.error('Failed to load PDF', err);
@@ -473,14 +567,15 @@
       const container = document.getElementById(`staff-doc-container-${itemId}`);
       const pdfCanvas = document.getElementById(`staff-doc-canvas-${itemId}`);
 
+      // Remove old zone overlays
       container.querySelectorAll('.zone-overlay').forEach(el => el.remove());
 
       const page = await state.pdf.getPage(pageNum);
       const dpr = window.devicePixelRatio || 1;
       const wrapperEl = document.getElementById(`staff-doc-wrapper-${itemId}`);
-      const desiredWidth = Math.min(wrapperEl?.clientWidth || 600, 700);
+      const baseWidth = Math.min(wrapperEl?.clientWidth || 600, 700);
       const unscaled = page.getViewport({ scale: 1 });
-      const scale = desiredWidth / unscaled.width;
+      const scale = (baseWidth / unscaled.width) * state.scale;
       const viewport = page.getViewport({ scale });
 
       pdfCanvas.width = Math.round(viewport.width * dpr);
@@ -493,12 +588,18 @@
       await page.render({ canvasContext: ctx, viewport }).promise;
 
       state.currentPage = pageNum;
+
+      // Update toolbar
       document.getElementById(`staff-doc-pageinfo-${itemId}`).textContent = `Page ${pageNum} of ${state.numPages}`;
       document.getElementById(`staff-doc-prev-${itemId}`).disabled = (pageNum <= 1);
       document.getElementById(`staff-doc-next-${itemId}`).disabled = (pageNum >= state.numPages);
+      document.getElementById(`staff-doc-zoom-${itemId}`).textContent = `${Math.round(state.scale * 100)}%`;
 
-      const navEl = document.getElementById(`staff-doc-nav-${itemId}`);
-      const navH = navEl ? navEl.offsetHeight : 0;
+      // Zone overlays — offset by canvas position within container
+      const canvasRect = pdfCanvas.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      const offsetX = canvasRect.left - containerRect.left;
+      const offsetY = canvasRect.top - containerRect.top;
 
       const zones = (staffZones[itemId] || []).filter(z => z.page === pageNum - 1 && z.filled_at);
       for (const z of zones) {
@@ -509,8 +610,8 @@
 
         const overlay = document.createElement('div');
         overlay.className = 'zone-overlay absolute rounded-sm';
-        overlay.style.left = oX + 'px';
-        overlay.style.top = (navH + oY) + 'px';
+        overlay.style.left = (offsetX + oX) + 'px';
+        overlay.style.top = (offsetY + oY) + 'px';
         overlay.style.width = oW + 'px';
         overlay.style.height = oH + 'px';
 
@@ -547,6 +648,13 @@
       const s = staffDocState[itemId];
       if (s && s.currentPage < s.numPages) renderStaffPage(itemId, s.currentPage + 1);
     }
+    function staffDocZoom(itemId, delta) {
+      const s = staffDocState[itemId];
+      if (!s) return;
+      const newScale = Math.round((s.scale + delta) * 100) / 100;
+      if (newScale < 0.5 || newScale > 3.0) return;
+      s.scale = newScale;
+      renderStaffPage(itemId, s.currentPage);
+    }
   </script>
-</body>
-</html>
+{% endblock %}

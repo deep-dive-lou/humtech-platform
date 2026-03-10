@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}HumTech Portal{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] } } } }</script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  {% block head %}{% endblock %}
+</head>
+<body class="bg-slate-50 text-gray-900 min-h-screen">
+
+  <div class="flex min-h-screen">
+    {% from "_sidebar.html" import sidebar %}
+    {% set active_page = self.nav_active() | trim %}
+    {{ sidebar(staff, active=active_page, brand=brand) }}
+
+    <main class="flex-1 ml-60">
+      <div class="px-10 py-8 {% block content_width %}{% endblock %} mx-auto">
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+  </div>
+
+  <script>
+    lucide.createIcons();
+    function toggleUserMenu() {
+      const menu = document.getElementById('userMenu');
+      if (menu) { menu.classList.toggle('hidden'); lucide.createIcons(); }
+    }
+    document.addEventListener('click', function(e) {
+      const btn = document.getElementById('userMenuBtn');
+      const menu = document.getElementById('userMenu');
+      if (btn && menu && !btn.contains(e.target) && !menu.contains(e.target)) {
+        menu.classList.add('hidden');
+      }
+    });
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
+
+{% block nav_active %}{% endblock %}

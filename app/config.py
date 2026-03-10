@@ -28,6 +28,9 @@ class Settings:
     spaces_secret: str = os.getenv("SPACES_SECRET", "")
     portal_jwt_secret: str = os.getenv("PORTAL_JWT_SECRET", "dev-secret-change-in-prod")
 
+    # Optimisation engine
+    optimiser_jwt_secret: str = os.getenv("OPTIMISER_JWT_SECRET", "dev-optimiser-secret-change-in-prod")
+
     # AWS SES (email sending)
     aws_ses_region: str = os.getenv("AWS_SES_REGION", "eu-west-2")
     aws_ses_access_key_id: str = os.getenv("AWS_SES_ACCESS_KEY_ID", "")

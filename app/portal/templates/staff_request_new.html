@@ -1,117 +1,139 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>New Request — HumTech Portal</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-50 text-gray-900 min-h-screen">
+{% extends "_base.html" %}
+{% block title %}New Request — {{ brand.brand_name or 'HumTech' }} Portal{% endblock %}
+{% block nav_active %}requests{% endblock %}
+{% block content_width %}max-w-3xl{% endblock %}
 
-  {% from "_nav.html" import staff_nav %}
-  {{ staff_nav(staff, active='requests') }}
+{% set bc = brand.brand_color or '#111827' %}
 
-  <div class="max-w-3xl mx-auto px-6 py-8">
+{% block head %}
+  <style>
+    .btn-brand { background-color: {{ bc }}; color: #fff; }
+    .btn-brand:hover { filter: brightness(1.15); }
+    .ring-brand:focus { --tw-ring-color: {{ bc }}40; }
+  </style>
+{% endblock %}
 
-    <div class="flex items-center gap-3 mb-6">
-      <a href="/portal/staff/requests" class="text-sm text-gray-400 hover:text-gray-900">&larr; Requests</a>
+{% block content %}
+
+    <div class="flex items-center gap-3 mb-8">
+      <a href="/portal/staff/requests" class="text-base text-gray-400 hover:text-gray-900">&larr; Requests</a>
       <span class="text-gray-200">|</span>
-      <h1 class="text-lg font-semibold">New Request</h1>
+      <h1 class="text-xl font-bold">New Request</h1>
     </div>
 
-    <form method="POST" action="/portal/staff/requests" class="space-y-6">
+    <form method="POST" action="/portal/staff/requests" class="space-y-6" id="newRequestForm">
 
       <!-- Client details -->
-      <div class="bg-white rounded-xl border border-gray-200 p-5">
-        <h2 class="text-sm font-semibold mb-4">Client details</h2>
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label class="block text-xs font-medium text-gray-600 mb-1">Full name <span class="text-red-400">*</span></label>
-            <input
-              type="text"
-              name="full_name"
-              required
-              placeholder="Jane Smith"
-              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-            />
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-gray-600 mb-1">Email <span class="text-red-400">*</span></label>
-            <input
-              type="email"
-              name="email"
-              required
-              placeholder="jane@example.com"
-              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-            />
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-gray-600 mb-1">Phone</label>
-            <input
-              type="tel"
-              name="phone"
-              placeholder="+44 7700 000000"
-              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-            />
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-gray-600 mb-1">Due date</label>
-            <input
-              type="date"
-              name="due_at"
-              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-            />
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100">
+          <h2 class="text-base font-semibold text-gray-900">Client details</h2>
+        </div>
+        <div class="p-6">
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-600 mb-1">First name <span class="text-red-400">*</span></label>
+              <input
+                type="text"
+                name="first_name"
+                required
+                placeholder="Jane"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 ring-brand"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-600 mb-1">Last name <span class="text-red-400">*</span></label>
+              <input
+                type="text"
+                name="last_name"
+                required
+                placeholder="Smith"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 ring-brand"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-600 mb-1">Email <span class="text-red-400">*</span></label>
+              <input
+                type="email"
+                name="email"
+                required
+                placeholder="jane@example.com"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 ring-brand"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-600 mb-1">Phone</label>
+              <input
+                type="tel"
+                name="phone"
+                placeholder="+44 7700 000000"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 ring-brand"
+              />
+            </div>
+            <div class="max-w-[220px]">
+              <label class="block text-sm font-medium text-gray-600 mb-1">Due date</label>
+              <input
+                type="date"
+                name="due_at"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 ring-brand"
+              />
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Template selection -->
-      <div class="bg-white rounded-xl border border-gray-200 p-5">
-        <h2 class="text-sm font-semibold mb-4">Document checklist</h2>
-
-        <div class="mb-4">
-          <label class="block text-xs font-medium text-gray-600 mb-1">Template</label>
-          <select
-            name="template_id"
-            id="template-select"
-            onchange="loadPreview(this.value)"
-            class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white"
-          >
-            <option value="">No template — create manually later</option>
-            {% for t in templates %}
-            <option value="{{ t.id }}">{{ t.name }}</option>
-            {% endfor %}
-          </select>
+      <!-- Document checklist -->
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100">
+          <h2 class="text-base font-semibold text-gray-900">Document checklist</h2>
         </div>
+        <div class="p-6">
 
-        <!-- Preview panel -->
-        <div id="template-preview" class="hidden">
-          <p class="text-xs font-medium text-gray-500 mb-2">Items that will be added:</p>
-          <div id="preview-items" class="space-y-1"></div>
+          <!-- Template mode -->
+          <div id="template-mode">
+            <select
+              name="template_id"
+              id="template-select"
+              onchange="loadPreview(this.value)"
+              class="max-w-sm w-full border border-gray-200 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 ring-brand bg-white"
+            >
+              <option value="">Select a template...</option>
+              {% for t in templates %}
+              <option value="{{ t.id }}">{{ t.name }}</option>
+              {% endfor %}
+            </select>
+
+            <div id="template-preview" class="hidden mt-4">
+              <p class="text-sm font-medium text-gray-500 mb-2">Items that will be added:</p>
+              <div id="preview-items" class="space-y-1.5"></div>
+            </div>
+
+            {% if not templates %}
+            <p class="text-sm text-gray-400 mt-3">
+              No templates yet.
+              <a href="/portal/staff/templates/new" class="underline hover:text-gray-700">Create one</a>
+              to speed up future requests.
+            </p>
+            {% endif %}
+          </div>
+
         </div>
-
-        {% if not templates %}
-        <p class="text-xs text-gray-400 mt-2">
-          No templates yet.
-          <a href="/portal/staff/templates/new" class="underline hover:text-gray-700">Create one</a>
-          to speed up future requests.
-        </p>
-        {% endif %}
       </div>
 
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-4">
         <button
           type="submit"
-          class="text-sm font-medium bg-gray-900 text-white px-5 py-2 rounded-lg hover:bg-gray-700 transition-colors"
+          class="text-base font-medium btn-brand px-6 py-2.5 rounded-xl transition-colors"
         >
           Create request
         </button>
-        <a href="/portal/staff/requests" class="text-sm text-gray-500 hover:text-gray-900">Cancel</a>
+        <a href="/portal/staff/requests" class="text-base text-gray-400 hover:text-gray-900">Cancel</a>
       </div>
 
     </form>
-  </div>
 
+{% endblock %}
+
+{% block scripts %}
   <script>
     async function loadPreview(templateId) {
       const panel = document.getElementById('template-preview');
@@ -125,8 +147,10 @@
       if (!res.ok) { panel.classList.add('hidden'); return; }
       const items = await res.json();
       list.innerHTML = items.map(i =>
-        `<div class="flex items-center gap-2 text-xs text-gray-600">
-          <span class="w-4 h-4 rounded-full border-2 border-gray-300 flex-shrink-0 inline-block"></span>
+        `<div class="flex items-center gap-2 text-sm text-gray-600">
+          <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+          </svg>
           ${escHtml(i.title)}
           ${i.item_type === 'signature' ? '<span class="text-purple-600 font-medium">(sign)</span>' : ''}
           ${i.required ? '' : '<span class="text-gray-400">(optional)</span>'}
@@ -139,5 +163,4 @@
       return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
   </script>
-</body>
-</html>
+{% endblock %}

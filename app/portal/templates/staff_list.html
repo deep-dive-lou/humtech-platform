@@ -1,180 +1,195 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Document Requests — HumTech Portal</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-50 text-gray-900 min-h-screen">
+{% extends "_base.html" %}
 
-  {% from "_nav.html" import staff_nav %}
-  {{ staff_nav(staff, active='requests') }}
+{% block title %}Requests — {{ brand.brand_name or 'HumTech' }} Portal{% endblock %}
 
-  <div class="max-w-5xl mx-auto px-6 py-8">
+{% block nav_active %}requests{% endblock %}
 
-    <!-- Filter bar -->
-    <div class="flex flex-wrap items-center gap-3 mb-6">
-      <form method="GET" action="/portal/staff/requests" class="flex items-center gap-2 flex-1 min-w-[200px]">
-        {% if active_status %}<input type="hidden" name="status" value="{{ active_status }}">{% endif %}
-        <input
-          type="text"
-          name="q"
-          value="{{ q or '' }}"
-          placeholder="Search by name or email..."
-          class="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-        />
-        <button type="submit" class="text-sm font-medium border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50">Search</button>
-        {% if q %}<a href="/portal/staff/requests{% if active_status %}?status={{ active_status }}{% endif %}" class="text-sm text-gray-400 hover:text-gray-900">Clear</a>{% endif %}
-      </form>
-      <div class="flex items-center gap-1">
-        {% for label, val in [('All', ''), ('Open', 'open'), ('Overdue', 'overdue'), ('Review', 'awaiting_review'), ('Done', 'completed'), ('Cancelled', 'cancelled')] %}
-        <a href="/portal/staff/requests?status={{ val }}{% if q %}&q={{ q }}{% endif %}"
-           class="text-xs px-3 py-1.5 rounded-lg {{ 'bg-gray-900 text-white' if active_status == val else 'border border-gray-200 text-gray-600 hover:bg-gray-50' }}">
-          {{ label }}
-        </a>
-        {% endfor %}
-      </div>
-      <a
-        href="/portal/staff/requests/new"
-        class="text-sm font-medium bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors"
-      >
+{% block content %}
+{% set bc = brand.brand_color or '#111827' %}
+
+    <!-- Page header -->
+    <div class="flex items-center justify-between mb-6">
+      <h1 class="text-2xl font-semibold">Requests</h1>
+      <a href="/portal/staff/requests/new"
+         class="inline-flex items-center gap-2 text-sm font-medium text-white px-5 py-2.5 rounded-xl hover:opacity-90 transition-opacity"
+         style="background-color: {{ bc }}">
+        <i data-lucide="plus" class="w-4 h-4"></i>
         New Request
       </a>
     </div>
 
+    <!-- Filter bar -->
+    <div class="flex flex-wrap items-center gap-4 mb-6">
+      <form method="GET" action="/portal/staff/requests" class="relative flex-1 min-w-[220px] max-w-sm">
+        {% if active_status %}<input type="hidden" name="status" value="{{ active_status }}">{% endif %}
+        <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"></i>
+        <input
+          type="text"
+          name="q"
+          value="{{ q or '' }}"
+          placeholder="Search clients..."
+          class="w-full pl-10 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:border-transparent"
+          style="--tw-ring-color: {{ bc }}40"
+        />
+      </form>
+      <div class="flex items-center gap-2">
+        {% for label, val in [('All', ''), ('Mine', 'mine'), ('Open', 'open'), ('Review', 'awaiting_review'), ('Overdue', 'overdue'), ('Closed', 'closed')] %}
+        <a href="/portal/staff/requests?status={{ val }}{% if q %}&q={{ q }}{% endif %}"
+           class="text-sm px-4 py-2 rounded-lg font-medium transition-colors
+                  {% if active_status == val %}text-white{% else %}border border-gray-200 text-gray-600 hover:bg-gray-50{% endif %}"
+           {% if active_status == val %}style="background-color: {{ bc }}"{% endif %}>
+          {{ label }}
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+
     {% if not requests %}
-    <div class="text-center py-16 text-gray-400">
-      <p class="text-sm">No document requests found.</p>
+    <!-- Empty state -->
+    <div class="text-center py-24">
+      <i data-lucide="inbox" class="w-16 h-16 text-gray-200 mx-auto mb-4"></i>
+      <p class="text-lg text-gray-400 mb-6">No requests found</p>
+      <a href="/portal/staff/requests/new"
+         class="inline-flex items-center gap-2 text-sm font-medium text-white px-5 py-2.5 rounded-xl hover:opacity-90 transition-opacity"
+         style="background-color: {{ bc }}">
+        <i data-lucide="plus" class="w-4 h-4"></i>
+        Create your first request
+      </a>
     </div>
     {% else %}
-    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <table class="w-full text-sm">
+    <!-- Requests table -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <table class="w-full">
         <thead>
-          <tr class="border-b border-gray-100 bg-gray-50 text-left">
-            <th class="pl-5 pr-2 py-3 w-8">
-              <input type="checkbox" id="select-all" onchange="toggleSelectAll(this)" class="rounded" />
+          <tr class="border-b border-gray-100">
+            <th class="pl-6 pr-2 py-3.5 w-10">
+              <input type="checkbox" id="select-all" onchange="toggleSelectAll(this)" class="w-5 h-5 rounded" />
             </th>
-            <th class="px-5 py-3 font-medium text-gray-500">Client</th>
-            <th class="px-5 py-3 font-medium text-gray-500">Status</th>
-            <th class="px-5 py-3 font-medium text-gray-500">Progress</th>
-            <th class="px-5 py-3 font-medium text-gray-500">Activity</th>
-            <th class="px-5 py-3 font-medium text-gray-500">Due</th>
-            <th class="px-5 py-3"></th>
+            <th class="px-6 py-3.5 text-left text-sm uppercase tracking-wider text-gray-400 font-medium">Client</th>
+            <th class="px-6 py-3.5 text-left text-sm uppercase tracking-wider text-gray-400 font-medium">Status</th>
+            <th class="px-6 py-3.5 text-left text-sm uppercase tracking-wider text-gray-400 font-medium">Progress</th>
+            <th class="px-6 py-3.5 text-left text-sm uppercase tracking-wider text-gray-400 font-medium">Due</th>
+            <th class="px-6 py-3.5 w-10"></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
           {% for r in requests %}
-          <tr class="hover:bg-gray-50 transition-colors">
-            <td class="pl-5 pr-2 py-3">
-              <input type="checkbox" class="row-check rounded" value="{{ r.id }}" onchange="updateBulkBar()" />
+          <tr class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="if(event.target.type!=='checkbox')window.location='/portal/staff/requests/{{ r.id }}'">
+            <td class="pl-6 pr-2 py-5" onclick="event.stopPropagation()">
+              <input type="checkbox" class="row-check w-5 h-5 rounded" value="{{ r.id }}" onchange="updateBulkBar()" />
             </td>
-            <td class="px-5 py-3">
-              <p class="font-medium">{{ r.client_name or "—" }}</p>
-              <p class="text-xs text-gray-400">{{ r.client_email or "" }}</p>
+            <td class="px-6 py-5">
+              <p class="text-base font-medium text-gray-900">{{ r.client_name or "—" }}</p>
+              <p class="text-sm text-gray-500 mt-0.5">{{ r.client_email or "" }}</p>
+              {% if r.created_by_name %}
+              <p class="text-xs text-gray-400 mt-0.5">by {{ r.created_by_name }}</p>
+              {% endif %}
             </td>
-            <td class="px-5 py-3">
+            <td class="px-6 py-5">
               {% set s = r.status %}
               {% if s == "draft" %}
-                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">Draft</span>
+                <span class="inline-flex items-center px-3 py-1 rounded-lg text-sm font-medium bg-gray-100 text-gray-600">Draft</span>
               {% elif s == "sent" %}
-                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">Sent</span>
+                <span class="inline-flex items-center px-3 py-1 rounded-lg text-sm font-medium bg-blue-50 text-blue-700">Sent</span>
               {% elif s == "viewed" %}
-                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">Viewed</span>
+                <span class="inline-flex items-center px-3 py-1 rounded-lg text-sm font-medium bg-indigo-50 text-indigo-700">Viewed</span>
               {% elif s == "in_progress" %}
-                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">In progress</span>
+                <span class="inline-flex items-center px-3 py-1 rounded-lg text-sm font-medium bg-yellow-50 text-yellow-700">In progress</span>
               {% elif s == "submitted" %}
-                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">Submitted</span>
+                <span class="inline-flex items-center px-3 py-1 rounded-lg text-sm font-medium bg-orange-50 text-orange-700">Submitted</span>
               {% elif s == "completed" %}
-                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Completed</span>
-              {% elif s == "cancelled" %}
-                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-500">Cancelled</span>
+                <span class="inline-flex items-center px-3 py-1 rounded-lg text-sm font-medium bg-green-50 text-green-700">Completed</span>
+              {% elif s == "closed" %}
+                <span class="inline-flex items-center px-3 py-1 rounded-lg text-sm font-medium bg-red-50 text-red-500">Closed</span>
               {% else %}
-                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">{{ s }}</span>
+                <span class="inline-flex items-center px-3 py-1 rounded-lg text-sm font-medium bg-gray-100 text-gray-600">{{ s }}</span>
+              {% endif %}
+              {% if r.last_viewed_rel %}
+                <p class="text-xs text-gray-400 mt-1.5">Viewed {{ r.last_viewed_rel }}</p>
+              {% elif r.sent_at and s == 'sent' %}
+                <p class="text-xs text-gray-400 mt-1.5">Not opened</p>
               {% endif %}
             </td>
-            <td class="px-5 py-3">
-              <div class="flex items-center gap-2">
-                <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden max-w-[80px]">
-                  <div class="h-1.5 bg-green-500 rounded-full" style="width: {% if r.item_total > 0 %}{{ (r.item_done / r.item_total * 100) | round }}{% else %}0{% endif %}%"></div>
+            <td class="px-6 py-5">
+              <div class="flex items-center gap-3">
+                <div class="flex-1 h-2.5 bg-gray-100 rounded-full overflow-hidden max-w-[120px]">
+                  <div class="h-2.5 rounded-full" style="background-color: {{ bc }}; width: {% if r.item_total > 0 %}{{ (r.item_done / r.item_total * 100) | round }}{% else %}0{% endif %}%"></div>
                 </div>
-                <span class="text-xs text-gray-500">{{ r.item_done }}/{{ r.item_total }}</span>
+                <span class="text-sm text-gray-600 font-medium">{{ r.item_done }}/{{ r.item_total }}</span>
               </div>
               {% if r.item_awaiting > 0 %}
-              <p class="text-xs text-amber-600 font-medium mt-0.5">{{ r.item_awaiting }} to review</p>
+              <p class="text-xs text-amber-600 font-medium mt-1.5">{{ r.item_awaiting }} to review</p>
               {% endif %}
             </td>
-            <td class="px-5 py-3 text-xs text-gray-400">
-              {% if r.last_viewed_rel %}
-                Viewed {{ r.last_viewed_rel }}
-              {% elif r.sent_at %}
-                Not opened
+            <td class="px-6 py-5">
+              {% if r.due_at %}
+                {% if r.due_at < now and r.status not in ['completed', 'closed'] %}
+                  <span class="text-sm font-medium text-red-600">{{ r.due_at.strftime("%d %b %Y") }}</span>
+                  <p class="text-xs text-red-400 mt-0.5">Overdue</p>
+                {% else %}
+                  <span class="text-sm text-gray-600">{{ r.due_at.strftime("%d %b %Y") }}</span>
+                {% endif %}
               {% else %}
-                Draft
+                <span class="text-sm text-gray-400">—</span>
               {% endif %}
             </td>
-            <td class="px-5 py-3 text-gray-500">
-              {% if r.due_at %}{{ r.due_at.strftime("%d %b %Y") }}{% else %}—{% endif %}
-            </td>
-            <td class="px-5 py-3 text-right">
-              <a href="/portal/staff/requests/{{ r.id }}" class="text-xs font-medium text-gray-900 hover:underline">
-                View
-              </a>
+            <td class="px-6 py-5 text-right">
+              <i data-lucide="chevron-right" class="w-5 h-5 text-gray-300"></i>
             </td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+    <!-- Bulk action bar -->
+    <div id="bulk-bar" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 text-white rounded-xl shadow-xl px-6 py-3 flex items-center gap-4 z-50"
+         style="background-color: {{ bc }}">
+      <span id="bulk-count" class="text-sm font-medium">0 selected</span>
+      <button onclick="bulkAction('close')" class="text-sm font-medium bg-white text-gray-900 px-4 py-1.5 rounded-lg hover:bg-gray-100">Close requests</button>
+      <button onclick="bulkAction('delete')" class="text-sm font-medium bg-red-600 px-4 py-1.5 rounded-lg hover:bg-red-700">Delete requests</button>
+    </div>
     {% endif %}
 
-    <!-- Bulk action bar -->
-    <div id="bulk-bar" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white rounded-xl shadow-xl px-6 py-3 flex items-center gap-4 z-50">
-      <span id="bulk-count" class="text-sm font-medium">0 selected</span>
-      <button onclick="bulkAction('complete')" class="text-sm font-medium bg-green-600 px-4 py-1.5 rounded-lg hover:bg-green-700">Complete</button>
-      <button onclick="bulkAction('cancel')" class="text-sm font-medium bg-white text-gray-900 px-4 py-1.5 rounded-lg hover:bg-gray-100">Cancel</button>
-    </div>
+{% endblock %}
 
-  </div>
+{% block scripts %}
+<script>
+  function toggleSelectAll(el) {
+    document.querySelectorAll('.row-check').forEach(cb => cb.checked = el.checked);
+    updateBulkBar();
+  }
 
-  <script>
-    function toggleSelectAll(el) {
-      document.querySelectorAll('.row-check').forEach(cb => cb.checked = el.checked);
-      updateBulkBar();
+  function updateBulkBar() {
+    const checked = document.querySelectorAll('.row-check:checked');
+    const bar = document.getElementById('bulk-bar');
+    const count = document.getElementById('bulk-count');
+    if (checked.length > 0) {
+      bar.classList.remove('hidden');
+      count.textContent = `${checked.length} selected`;
+    } else {
+      bar.classList.add('hidden');
     }
+    const all = document.querySelectorAll('.row-check');
+    document.getElementById('select-all').checked = all.length > 0 && checked.length === all.length;
+  }
 
-    function updateBulkBar() {
-      const checked = document.querySelectorAll('.row-check:checked');
-      const bar = document.getElementById('bulk-bar');
-      const count = document.getElementById('bulk-count');
-      if (checked.length > 0) {
-        bar.classList.remove('hidden');
-        count.textContent = `${checked.length} selected`;
-      } else {
-        bar.classList.add('hidden');
-      }
-      const all = document.querySelectorAll('.row-check');
-      document.getElementById('select-all').checked = all.length > 0 && checked.length === all.length;
+  async function bulkAction(action) {
+    const ids = [...document.querySelectorAll('.row-check:checked')].map(cb => cb.value);
+    if (!ids.length) return;
+    const label = action === 'delete' ? 'permanently delete' : 'close';
+    if (!confirm(`Are you sure you want to ${label} ${ids.length} request(s)?`)) return;
+
+    const res = await fetch('/portal/staff/requests/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, request_ids: ids }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      alert(data.error || 'Action failed');
+      return;
     }
-
-    async function bulkAction(action) {
-      const ids = [...document.querySelectorAll('.row-check:checked')].map(cb => cb.value);
-      if (!ids.length) return;
-      const label = action === 'complete' ? 'complete' : 'cancel';
-      if (!confirm(`Are you sure you want to ${label} ${ids.length} request(s)?`)) return;
-
-      const res = await fetch('/portal/staff/requests/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, request_ids: ids }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        alert(data.error || 'Action failed');
-        return;
-      }
-      window.location.reload();
-    }
-  </script>
-</body>
-</html>
+    window.location.reload();
+  }
+</script>
+{% endblock %}

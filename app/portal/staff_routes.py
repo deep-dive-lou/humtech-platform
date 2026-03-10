@@ -61,10 +61,20 @@ def _relative_time(dt) -> str:
 # ---------------------------------------------------------------------------
 
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, error: Optional[str] = None):
+async def login_page(
+    request: Request,
+    error: Optional[str] = None,
+    conn: asyncpg.Connection = Depends(get_conn),
+):
+    row = await conn.fetchrow(
+        "SELECT brand_color, logo_url, brand_name FROM portal.tenants WHERE slug = $1",
+        TENANT_SLUG,
+    )
+    brand = dict(row) if row else {}
     return templates.TemplateResponse("staff_login.html", {
         "request": request,
         "error": error,
+        "brand": brand,
     })
 
 
@@ -129,9 +139,9 @@ async def staff_dashboard(
     stats = await conn.fetchrow(
         """
         SELECT
-            COUNT(*) FILTER (WHERE status NOT IN ('completed', 'cancelled')) AS open_count,
+            COUNT(*) FILTER (WHERE status NOT IN ('completed', 'closed')) AS open_count,
             COUNT(*) FILTER (
-                WHERE status NOT IN ('completed', 'cancelled')
+                WHERE status NOT IN ('completed', 'closed')
                 AND due_at IS NOT NULL AND due_at < now()
             ) AS overdue_count,
             COUNT(*) FILTER (
@@ -151,7 +161,7 @@ async def staff_dashboard(
         JOIN portal.doc_requests r ON r.id = ri.request_id
         WHERE ri.tenant_id = $1::uuid
           AND ri.status = 'uploaded'
-          AND r.status NOT IN ('completed', 'cancelled')
+          AND r.status NOT IN ('completed', 'closed')
         """,
         staff["tenant_id"],
     )
@@ -168,7 +178,7 @@ async def staff_dashboard(
         JOIN portal.clients c ON c.id = r.client_id
         LEFT JOIN portal.doc_request_items ri ON ri.request_id = r.id
         WHERE r.tenant_id = $1::uuid
-          AND r.status NOT IN ('completed', 'cancelled')
+          AND r.status NOT IN ('completed', 'closed')
           AND EXISTS (
               SELECT 1 FROM portal.doc_request_items ri2
               WHERE ri2.request_id = r.id AND ri2.status = 'uploaded'
@@ -933,6 +943,61 @@ async def update_user(
 
 
 # ---------------------------------------------------------------------------
+# Change own password — available to all staff
+# ---------------------------------------------------------------------------
+
+@router.get("/change-password", response_class=HTMLResponse)
+async def change_password_form(
+    request: Request,
+    staff: dict = Depends(require_staff),
+    conn: asyncpg.Connection = Depends(get_conn),
+):
+    brand = await get_tenant_brand(conn, staff["tenant_id"])
+    return templates.TemplateResponse("staff_change_password.html", {
+        "request": request, "staff": staff, "brand": brand,
+    })
+
+
+@router.post("/change-password", response_class=HTMLResponse)
+async def change_password(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+    staff: dict = Depends(require_staff),
+    conn: asyncpg.Connection = Depends(get_conn),
+):
+    brand = await get_tenant_brand(conn, staff["tenant_id"])
+    ctx = {"request": request, "staff": staff, "brand": brand}
+
+    row = await conn.fetchrow(
+        "SELECT password_hash FROM portal.staff_users WHERE id = $1::uuid",
+        staff["staff_id"],
+    )
+    if not row or not verify_password(current_password, row["password_hash"]):
+        ctx["error"] = "Current password is incorrect."
+        return templates.TemplateResponse("staff_change_password.html", ctx)
+
+    if new_password != confirm_password:
+        ctx["error"] = "New passwords do not match."
+        return templates.TemplateResponse("staff_change_password.html", ctx)
+
+    if len(new_password) < 8:
+        ctx["error"] = "Password must be at least 8 characters."
+        return templates.TemplateResponse("staff_change_password.html", ctx)
+
+    await conn.execute(
+        "UPDATE portal.staff_users SET password_hash = $1 WHERE id = $2::uuid",
+        hash_password(new_password),
+        staff["staff_id"],
+    )
+    await log_audit(conn, staff["tenant_id"], "password_changed", "staff", actor_id=staff["staff_id"])
+
+    ctx["success"] = "Password updated successfully."
+    return templates.TemplateResponse("staff_change_password.html", ctx)
+
+
+# ---------------------------------------------------------------------------
 # New request form + create — MUST come before /requests/{request_id}
 # ---------------------------------------------------------------------------
 
@@ -958,14 +1023,17 @@ async def staff_request_new_form(
 @router.post("/requests")
 async def create_request(
     request: Request,
-    full_name: str = Form(...),
+    first_name: str = Form(...),
+    last_name: str = Form(...),
     email: str = Form(...),
     phone: str = Form(default=""),
     due_at: str = Form(default=""),
     template_id: str = Form(default=""),
+    manual_items: str = Form(default=""),
     staff: dict = Depends(require_staff),
     conn: asyncpg.Connection = Depends(get_conn),
 ):
+    full_name = f"{first_name.strip()} {last_name.strip()}"
     email = email.lower().strip()
     phone_val = phone.strip() or None
     due_val = None
@@ -1008,13 +1076,14 @@ async def create_request(
         # Create request
         request_id = await conn.fetchval(
             """
-            INSERT INTO portal.doc_requests (tenant_id, client_id, due_at, status)
-            VALUES ($1::uuid, $2::uuid, $3, 'draft')
+            INSERT INTO portal.doc_requests (tenant_id, client_id, due_at, status, created_by_staff_id)
+            VALUES ($1::uuid, $2::uuid, $3, 'draft', $4::uuid)
             RETURNING id
             """,
             staff["tenant_id"],
             client_id,
             due_val,
+            staff["staff_id"],
         )
 
         # Store template reference for email customisation
@@ -1072,6 +1141,41 @@ async def create_request(
                         z["sort_order"], z["required"],
                     )
 
+        # Create manual items (if no template or in addition to template)
+        if manual_items.strip():
+            import json as _json
+            try:
+                items_data = _json.loads(manual_items)
+            except _json.JSONDecodeError:
+                items_data = []
+            # Start sort_order after any template items
+            max_order_row = await conn.fetchval(
+                "SELECT COALESCE(MAX(sort_order), -1) FROM portal.doc_request_items WHERE request_id = $1::uuid",
+                request_id,
+            )
+            sort_start = (max_order_row or -1) + 1
+            for idx, item in enumerate(items_data):
+                item_type = item.get("item_type", "file_upload")
+                if item_type not in ("file_upload", "signature"):
+                    item_type = "file_upload"
+                title = (item.get("title") or "").strip()
+                if not title:
+                    continue
+                await conn.execute(
+                    """
+                    INSERT INTO portal.doc_request_items
+                        (tenant_id, request_id, item_type, title, instructions, required, sort_order)
+                    VALUES ($1::uuid, $2::uuid, $3::public.template_item_type, $4, $5, $6, $7)
+                    """,
+                    staff["tenant_id"],
+                    request_id,
+                    item_type,
+                    title,
+                    (item.get("instructions") or "").strip() or None,
+                    bool(item.get("required", True)),
+                    sort_start + idx,
+                )
+
     return RedirectResponse(
         url=f"/portal/staff/requests/{request_id}",
         status_code=303,
@@ -1091,12 +1195,33 @@ async def bulk_action(
     action = body.get("action")
     request_ids = body.get("request_ids", [])
 
-    if action not in ("complete", "cancel"):
-        return JSONResponse({"error": "action must be 'complete' or 'cancel'"}, status_code=400)
+    if action not in ("complete", "close", "delete"):
+        return JSONResponse({"error": "action must be 'complete', 'close', or 'delete'"}, status_code=400)
     if not request_ids or not isinstance(request_ids, list):
         return JSONResponse({"error": "request_ids required"}, status_code=400)
 
-    new_status = "completed" if action == "complete" else "cancelled"
+    if action == "delete":
+        eligible = await conn.fetch(
+            """
+            SELECT id FROM portal.doc_requests
+            WHERE id = ANY($1::uuid[])
+              AND tenant_id = $2::uuid
+            """,
+            request_ids,
+            staff["tenant_id"],
+        )
+        eligible_ids = [str(row["id"]) for row in eligible]
+        if eligible_ids:
+            for rid in eligible_ids:
+                await conn.execute("DELETE FROM portal.files WHERE request_id = $1::uuid", rid)
+                await conn.execute("DELETE FROM portal.doc_request_items WHERE request_id = $1::uuid", rid)
+                await conn.execute(
+                    "DELETE FROM portal.doc_requests WHERE id = $1::uuid AND tenant_id = $2::uuid",
+                    rid, staff["tenant_id"],
+                )
+        return {"deleted": len(eligible_ids)}
+
+    new_status = "completed" if action == "complete" else "closed"
 
     updated = await conn.fetch(
         """
@@ -1104,7 +1229,7 @@ async def bulk_action(
         SET status = $1::public.request_status
         WHERE id = ANY($2::uuid[])
           AND tenant_id = $3::uuid
-          AND status NOT IN ('completed', 'cancelled')
+          AND status NOT IN ('completed', 'closed')
         RETURNING id
         """,
         new_status,
@@ -1141,7 +1266,7 @@ async def staff_requests(
     params: list = [staff["tenant_id"]]
 
     if status == "open":
-        conditions.append("r.status NOT IN ('completed', 'cancelled')")
+        conditions.append("r.status NOT IN ('completed', 'closed')")
     elif status == "awaiting_review":
         conditions.append(
             "EXISTS (SELECT 1 FROM portal.doc_request_items ri2 "
@@ -1149,10 +1274,16 @@ async def staff_requests(
         )
     elif status == "overdue":
         conditions.append(
-            "r.due_at < now() AND r.status NOT IN ('completed', 'cancelled')"
+            "r.due_at < now() AND r.status NOT IN ('completed', 'closed')"
         )
+    elif status == "closed":
+        # "Closed" tab shows both completed and closed requests
+        conditions.append("r.status IN ('completed', 'closed')")
+    elif status == "mine":
+        params.append(staff["staff_id"])
+        conditions.append(f"r.created_by_staff_id = ${len(params)}::uuid")
     elif status in ("draft", "sent", "viewed", "in_progress", "submitted",
-                     "completed", "cancelled"):
+                     "completed"):
         params.append(status)
         conditions.append(f"r.status = ${len(params)}::public.request_status")
 
@@ -1169,15 +1300,17 @@ async def staff_requests(
         SELECT r.id, r.status::text AS status, r.due_at, r.created_at,
                r.sent_at, r.last_viewed_at,
                c.full_name AS client_name, c.email AS client_email,
+               su.full_name AS created_by_name,
                COUNT(ri.id) AS item_total,
                COUNT(CASE WHEN ri.status = 'approved' THEN 1 END) AS item_done,
                COUNT(CASE WHEN ri.status = 'uploaded' THEN 1 END) AS item_awaiting
         FROM portal.doc_requests r
         JOIN portal.clients c ON c.id = r.client_id
+        LEFT JOIN portal.staff_users su ON su.id = r.created_by_staff_id
         LEFT JOIN portal.doc_request_items ri ON ri.request_id = r.id
         WHERE {where}
         GROUP BY r.id, r.status, r.due_at, r.created_at, r.sent_at,
-                 r.last_viewed_at, c.full_name, c.email
+                 r.last_viewed_at, c.full_name, c.email, su.full_name
         ORDER BY r.created_at DESC
         """,
         *params,
@@ -1197,6 +1330,7 @@ async def staff_requests(
         "brand": brand,
         "active_status": status or "",
         "q": q or "",
+        "now": datetime.now(timezone.utc),
     })
 
 
@@ -1325,6 +1459,16 @@ async def staff_request_detail(
     )
     email_enabled = bool(email_cfg and email_cfg["domain_verified"] and email_cfg["sending_from_email"])
 
+    # Fetch audit timeline
+    audit_events = await conn.fetch("""
+        SELECT event_type, actor::text AS actor, metadata::text AS metadata,
+               event_time AS created_at
+        FROM portal.audit_events
+        WHERE request_id = $1::uuid AND tenant_id = $2::uuid
+        ORDER BY event_time DESC
+        LIMIT 50
+    """, request_id, staff["tenant_id"])
+
     return templates.TemplateResponse("staff_detail.html", {
         "request": request,
         "req": dict(req),
@@ -1338,6 +1482,7 @@ async def staff_request_detail(
         "brand": brand,
         "all_approved": all_approved,
         "email_enabled": email_enabled,
+        "audit_events": [dict(e) for e in audit_events],
     })
 
 
@@ -1567,19 +1712,19 @@ async def close_request(
     conn: asyncpg.Connection = Depends(get_conn),
 ):
     action = body.get("action")
-    if action not in ("complete", "cancel"):
+    if action not in ("complete", "close"):
         return JSONResponse(
-            {"error": "action must be 'complete' or 'cancel'"}, status_code=400
+            {"error": "action must be 'complete' or 'close'"}, status_code=400
         )
 
-    new_status = "completed" if action == "complete" else "cancelled"
+    new_status = "completed" if action == "complete" else "closed"
 
     result = await conn.fetchval(
         """
         UPDATE portal.doc_requests
         SET status = $1::public.request_status
         WHERE id = $2::uuid AND tenant_id = $3::uuid
-          AND status NOT IN ('completed', 'cancelled')
+          AND status NOT IN ('completed', 'closed')
         RETURNING id
         """,
         new_status,
@@ -1620,7 +1765,7 @@ async def reopen_request(
             ELSE 'draft'::public.request_status
         END
         WHERE id = $1::uuid AND tenant_id = $2::uuid
-          AND status IN ('completed', 'cancelled')
+          AND status IN ('completed', 'closed')
         RETURNING id, status::text AS status
         """,
         request_id,
@@ -1760,22 +1905,16 @@ async def delete_user(
 @router.delete("/requests/{request_id}")
 async def delete_request(
     request_id: str,
-    staff: dict = Depends(require_admin),
+    staff: dict = Depends(require_staff),
     conn: asyncpg.Connection = Depends(get_conn),
 ):
-    """Delete a request, its items, and files. Admin only. Only draft/cancelled."""
+    """Delete a request, its items, and files. Only draft/closed."""
     req = await conn.fetchrow(
         "SELECT id, status FROM portal.doc_requests WHERE id = $1::uuid AND tenant_id = $2::uuid",
         request_id, staff["tenant_id"],
     )
     if not req:
         return JSONResponse({"error": "Request not found"}, status_code=404)
-
-    if req["status"] not in ("draft", "cancelled"):
-        return JSONResponse(
-            {"error": "Only draft or cancelled requests can be deleted. Cancel it first."},
-            status_code=400,
-        )
 
     await conn.execute("DELETE FROM portal.files WHERE request_id = $1::uuid", request_id)
     await conn.execute("DELETE FROM portal.doc_request_items WHERE request_id = $1::uuid", request_id)

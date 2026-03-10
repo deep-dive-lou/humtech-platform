@@ -1,63 +1,52 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Templates — HumTech Portal</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-50 text-gray-900 min-h-screen">
+{% extends "_base.html" %}
 
-  {% from "_nav.html" import staff_nav %}
-  {{ staff_nav(staff, active='templates') }}
+{% block title %}Templates — {{ brand.brand_name or 'HumTech' }} Portal{% endblock %}
 
-  <div class="max-w-5xl mx-auto px-6 py-8">
+{% block nav_active %}templates{% endblock %}
+
+{% block content %}
 
     <div class="flex items-center justify-between mb-6">
-      <h1 class="text-lg font-semibold">Document Templates</h1>
+      <h1 class="text-2xl font-semibold">Document Templates</h1>
       <a
         href="/portal/staff/templates/new"
-        class="text-sm font-medium bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors"
+        class="text-base font-medium bg-gray-900 text-white px-5 py-2.5 rounded-lg hover:bg-gray-700 transition-colors"
       >
         New Template
       </a>
     </div>
 
     {% if not tmplts %}
-    <div class="bg-white rounded-xl border border-gray-200 p-10 text-center">
-      <p class="font-medium text-gray-900">No templates yet</p>
-      <p class="text-sm text-gray-400 mt-1">Create a template to reuse checklists across requests.</p>
-      <a href="/portal/staff/templates/new" class="mt-4 inline-block text-sm font-medium bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors">
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
+      <p class="text-lg font-medium text-gray-900">No templates yet</p>
+      <p class="text-base text-gray-400 mt-1">Create a template to reuse checklists across requests.</p>
+      <a href="/portal/staff/templates/new" class="mt-4 inline-block text-base font-medium bg-gray-900 text-white px-5 py-2.5 rounded-lg hover:bg-gray-700 transition-colors">
         Create first template
       </a>
     </div>
     {% else %}
-    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-        <h2 class="text-sm font-semibold">Document templates</h2>
-        <span class="text-xs text-gray-400">{{ tmplts | length }} template{{ 's' if tmplts | length != 1 }}</span>
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <h2 class="text-base font-semibold">Document templates</h2>
+        <span class="text-sm text-gray-400">{{ tmplts | length }} template{{ 's' if tmplts | length != 1 }}</span>
       </div>
       <div class="divide-y divide-gray-100">
         {% for t in tmplts %}
-        <div class="px-5 py-4 flex items-center justify-between">
+        <div class="px-6 py-5 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer"
+             onclick="window.location='/portal/staff/templates/{{ t.id }}/edit'">
           <div>
-            <p class="font-medium text-sm">{{ t.name }}</p>
+            <p class="font-medium text-base">{{ t.name }}</p>
             {% if t.description %}
-            <p class="text-xs text-gray-400 mt-0.5">{{ t.description }}</p>
+            <p class="text-sm text-gray-400 mt-0.5">{{ t.description }}</p>
             {% endif %}
-            <p class="text-xs text-gray-400 mt-1">{{ t.item_count }} item{{ 's' if t.item_count != 1 }}</p>
+            <p class="text-sm text-gray-400 mt-1">{{ t.item_count }} item{{ 's' if t.item_count != 1 }}</p>
           </div>
-          <div class="flex items-center gap-2">
-            <a
-              href="/portal/staff/templates/{{ t.id }}/edit"
-              class="text-xs font-medium border border-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              Edit
-            </a>
+          <div class="flex items-center gap-3" onclick="event.stopPropagation()">
             <button type="button" onclick="deleteTemplate('{{ t.id }}', '{{ t.name | e }}')"
-                    class="text-xs text-red-400 hover:text-red-600 px-2 py-1.5">
+                    class="text-sm text-red-400 hover:text-red-600 px-2 py-2">
               Delete
             </button>
+            <i data-lucide="chevron-right" class="w-5 h-5 text-gray-300"></i>
           </div>
         </div>
         {% endfor %}
@@ -65,7 +54,9 @@
     </div>
     {% endif %}
 
-  </div>
+{% endblock %}
+
+{% block scripts %}
   <script>
     async function deleteTemplate(id, name) {
       if (!confirm(`Delete template "${name}"? This cannot be undone.`)) return;
@@ -74,5 +65,4 @@
       else { const d = await res.json(); alert(d.error || 'Delete failed'); }
     }
   </script>
-</body>
-</html>
+{% endblock %}

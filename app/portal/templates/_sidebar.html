@@ -1,0 +1,78 @@
+{% macro sidebar(staff, active='', brand=None) %}
+{% set bc = brand.brand_color or '#111827' %}
+<aside class="fixed left-0 top-0 h-screen w-60 bg-white border-r border-gray-200 z-20 flex flex-col">
+
+  <!-- Brand -->
+  <div class="px-5 pt-6 pb-4">
+    {% if brand and brand.logo_url %}
+      <img src="{{ brand.logo_url }}" alt="{{ brand.brand_name or 'Portal' }}" class="h-7">
+    {% else %}
+      <p class="text-base font-bold tracking-wide text-gray-900">{{ brand.brand_name or 'HumTech' }}</p>
+    {% endif %}
+    <p class="text-xs uppercase tracking-widest text-gray-400 mt-1">Document Portal</p>
+  </div>
+
+  <!-- Nav links -->
+  <nav class="flex-1 px-3 mt-2 space-y-1">
+    <a href="/portal/staff/"
+       class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-base font-medium transition-colors
+              {% if active == 'dashboard' %}font-semibold{% else %}text-gray-500 hover:text-gray-900 hover:bg-gray-50{% endif %}"
+       {% if active == 'dashboard' %}style="background-color: {{ bc }}12; color: {{ bc }}"{% endif %}>
+      <i data-lucide="layout-dashboard" class="w-5 h-5 flex-shrink-0"></i>
+      Dashboard
+    </a>
+
+    <a href="/portal/staff/requests"
+       class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-base font-medium transition-colors
+              {% if active == 'requests' %}font-semibold{% else %}text-gray-500 hover:text-gray-900 hover:bg-gray-50{% endif %}"
+       {% if active == 'requests' %}style="background-color: {{ bc }}12; color: {{ bc }}"{% endif %}>
+      <i data-lucide="file-text" class="w-5 h-5 flex-shrink-0"></i>
+      Requests
+    </a>
+
+    {% if staff.role == "admin" %}
+    <a href="/portal/staff/templates"
+       class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-base font-medium transition-colors
+              {% if active == 'templates' %}font-semibold{% else %}text-gray-500 hover:text-gray-900 hover:bg-gray-50{% endif %}"
+       {% if active == 'templates' %}style="background-color: {{ bc }}12; color: {{ bc }}"{% endif %}>
+      <i data-lucide="copy" class="w-5 h-5 flex-shrink-0"></i>
+      Templates
+    </a>
+
+    {% endif %}
+  </nav>
+
+  <!-- User block with dropdown -->
+  <div class="px-4 py-4 border-t border-gray-100 relative">
+    <button type="button" onclick="toggleUserMenu()" id="userMenuBtn"
+            class="w-full flex items-center gap-3 rounded-lg hover:bg-gray-50 p-1.5 transition-colors cursor-pointer">
+      <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white flex-shrink-0"
+           style="background-color: {{ bc }}">
+        {{ (staff.full_name or staff.email or '?')[0] | upper }}
+      </div>
+      <div class="min-w-0 flex-1 text-left">
+        <p class="text-sm font-medium text-gray-900 truncate">{{ staff.full_name or staff.email }}</p>
+        <p class="text-[11px] uppercase text-gray-400">{{ staff.role }}</p>
+      </div>
+      <i data-lucide="chevron-up" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+    </button>
+
+    <!-- Dropdown menu -->
+    <div id="userMenu" class="hidden absolute bottom-full left-3 right-3 mb-1 bg-white rounded-lg border border-gray-200 shadow-lg py-1 z-50">
+      {% if staff.role == 'admin' %}
+      <a href="/portal/staff/settings" class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+        <i data-lucide="settings" class="w-4 h-4"></i> Settings
+      </a>
+      {% endif %}
+      <a href="/portal/staff/change-password" class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+        <i data-lucide="key-round" class="w-4 h-4"></i> Change password
+      </a>
+      <div class="border-t border-gray-100 my-1"></div>
+      <a href="/portal/staff/logout" class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors">
+        <i data-lucide="log-out" class="w-4 h-4"></i> Sign out
+      </a>
+    </div>
+  </div>
+
+</aside>
+{% endmacro %}

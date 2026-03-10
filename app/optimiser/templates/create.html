@@ -1,0 +1,91 @@
+{% extends "_base.html" %}
+{% block nav_active %}experiments{% endblock %}
+{% block title %}New Experiment — Optimisation Engine{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl">
+  <a href="/optimiser/" class="text-sm text-gray-500 hover:text-gray-900 inline-flex items-center gap-1 mb-4">
+    <i data-lucide="arrow-left" class="w-4 h-4"></i> Back to experiments
+  </a>
+  <h1 class="text-2xl font-bold text-gray-900 mb-6">New Experiment</h1>
+
+  <form method="POST" action="/optimiser/experiments" class="space-y-6">
+
+    <!-- Name -->
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+      <input type="text" name="name" required
+             class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+             placeholder="e.g. Homepage headline test">
+    </div>
+
+    <!-- Description -->
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Description <span class="text-gray-400">(optional)</span></label>
+      <textarea name="description" rows="2"
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                placeholder="What are you testing and why?"></textarea>
+    </div>
+
+    <!-- Mode -->
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Mode</label>
+      <select name="mode" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-900 focus:border-transparent">
+        <option value="bandit" selected>Bayesian Bandit — fast convergence, dynamic traffic allocation</option>
+        <option value="taguchi" disabled>Taguchi (coming soon) — efficient orthogonal screening</option>
+        <option value="evolutionary" disabled>Evolutionary (coming soon) — deep search, nonlinear interactions</option>
+      </select>
+    </div>
+
+    <!-- Metric type -->
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Metric</label>
+      <select name="metric_type" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-900 focus:border-transparent">
+        <option value="conversion" selected>Conversion rate</option>
+        <option value="revenue">Revenue per visitor</option>
+      </select>
+    </div>
+
+    <!-- Winner rules -->
+    <div class="border-t border-gray-200 pt-6">
+      <p class="text-sm font-medium text-gray-700 mb-4">Winner declaration rules</p>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">P(best) threshold</label>
+          <input type="number" name="p_best_threshold" value="0.95" step="0.01" min="0.5" max="0.999"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-900 focus:border-transparent">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Expected loss threshold</label>
+          <input type="number" name="expected_loss_threshold" value="0.01" step="0.001" min="0.001" max="0.1"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-900 focus:border-transparent">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Min impressions per variant</label>
+          <input type="number" name="min_impressions" value="100" min="10" max="100000"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-900 focus:border-transparent">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Min days running</label>
+          <input type="number" name="min_days" value="7" min="1" max="365"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-900 focus:border-transparent">
+        </div>
+      </div>
+    </div>
+
+    <!-- Variants -->
+    <div class="border-t border-gray-200 pt-6">
+      <label class="block text-sm font-medium text-gray-700 mb-1">Variants <span class="text-gray-400">(comma-separated labels)</span></label>
+      <input type="text" name="variant_labels" required
+             class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+             placeholder="e.g. Control, Urgency headline, Social proof headline">
+      <p class="text-xs text-gray-400 mt-1">First variant is marked as the control. You can add more later.</p>
+    </div>
+
+    <button type="submit"
+            class="w-full px-4 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors">
+      Create Experiment
+    </button>
+  </form>
+</div>
+{% endblock %}

@@ -1,1042 +1,1376 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% if tmpl %}Edit Template{% else %}New Template{% endif %} — HumTech Portal</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+{% extends "_base.html" %}
+
+{% block title %}{% if tmpl %}Edit Template{% else %}New Template{% endif %} — {{ brand.brand_name or 'HumTech' }} Portal{% endblock %}
+
+{% block nav_active %}templates{% endblock %}
+
+{% block content_width %}max-w-3xl{% endblock %}
+
+{% set bc = brand.brand_color or '#111827' %}
+
+{% block head %}
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
-</head>
-<body class="bg-gray-50 text-gray-900 min-h-screen">
+  <style>
+    .btn-brand { background-color: {{ bc }}; color: #fff; }
+    .btn-brand:hover { filter: brightness(1.2); }
+    .step-num { background-color: {{ bc }}; }
+    .ring-brand:focus { --tw-ring-color: {{ bc }}; }
+    .border-brand { border-color: {{ bc }} !important; }
+  </style>
+{% endblock %}
 
-  {% from "_nav.html" import staff_nav %}
-  {{ staff_nav(staff, active='templates') }}
+{% block content %}
+<div class="space-y-8">
 
-  <div class="max-w-3xl mx-auto px-6 py-8 space-y-6">
-
-    <div class="flex items-center gap-3">
-      <a href="/portal/staff/templates" class="text-sm text-gray-400 hover:text-gray-900">&larr; Templates</a>
-      <span class="text-gray-200">|</span>
-      <h1 class="text-lg font-semibold">{% if tmpl %}{{ tmpl.name }}{% else %}New Template{% endif %}</h1>
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <a href="/portal/staff/templates" class="text-base text-gray-400 hover:text-gray-900">&larr; Templates</a>
+        <span class="text-gray-200">|</span>
+        <h1 class="text-xl font-semibold">{% if tmpl %}{{ tmpl.name }}{% else %}New Template{% endif %}</h1>
+      </div>
+      {% if tmpl %}
+      <a
+        href="/portal/staff/templates"
+        class="text-base font-medium btn-brand px-6 py-2.5 rounded-lg transition-colors"
+      >
+        Done
+      </a>
+      {% endif %}
     </div>
 
-    <!-- Name + description form -->
-    <div class="bg-white rounded-xl border border-gray-200 p-5">
-      <h2 class="text-sm font-semibold mb-4">Template details</h2>
-      <form
-        method="POST"
-        action="{% if tmpl %}/portal/staff/templates/{{ tmpl.id }}{% else %}/portal/staff/templates{% endif %}"
-      >
-        <div class="space-y-4">
-          <div>
-            <label class="block text-xs font-medium text-gray-600 mb-1">Name <span class="text-red-400">*</span></label>
-            <input
-              type="text"
-              name="name"
-              required
-              value="{{ tmpl.name if tmpl else '' }}"
-              placeholder="e.g. Mortgage Application Pack"
-              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-            />
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-gray-600 mb-1">Description</label>
-            <input
-              type="text"
-              name="description"
-              value="{{ tmpl.description if tmpl and tmpl.description else '' }}"
-              placeholder="Optional — shown to staff when selecting a template"
-              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-            />
+    <!-- ============================================================ -->
+    <!-- STEP 1: Name your template                                    -->
+    <!-- ============================================================ -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      {% if tmpl %}
+      <button type="button" onclick="toggleStep('step1')" class="w-full flex items-center gap-3 px-6 py-4 border-b border-gray-100 bg-gray-50/50 text-left hover:bg-gray-50 transition-colors">
+        <span class="w-8 h-8 rounded-full step-num text-white text-sm font-bold flex items-center justify-center flex-shrink-0">1</span>
+        <h2 class="text-lg font-bold tracking-tight">Name your template</h2>
+        <span class="ml-auto text-sm text-green-600 font-medium flex items-center gap-1" id="step1-check">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+          Done
+        </span>
+        <svg id="step1-chevron" class="w-5 h-5 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </button>
+      <div id="step1-body" class="hidden">
+        <div class="p-6">
+          <div class="space-y-5 max-w-md">
+            <div>
+              <label class="block text-sm font-medium text-gray-600 mb-1">Template name</label>
+              <input
+                type="text"
+                id="tmpl-name"
+                value="{{ tmpl.name }}"
+                placeholder="e.g. Mortgage Application Pack"
+                class="w-full border border-gray-200 rounded-lg px-3.5 py-2 text-base focus:outline-none focus:ring-2 ring-brand"
+                onblur="autoSaveName()"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-600 mb-1">Description <span class="text-gray-400 font-normal">(optional)</span></label>
+              <input
+                type="text"
+                id="tmpl-description"
+                value="{{ tmpl.description or '' }}"
+                placeholder="Brief note about when to use this template"
+                class="w-full border border-gray-200 rounded-lg px-3.5 py-2 text-base focus:outline-none focus:ring-2 ring-brand"
+                onblur="autoSaveName()"
+              />
+            </div>
           </div>
         </div>
-
-        {% if tmpl %}
-        <div class="border-t border-gray-100 mt-5 pt-5">
-          <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Email customisation</h3>
-          <p class="text-xs text-gray-400 mb-4">Optional — customise the email sent when sharing this request with clients. Leave blank for defaults.</p>
-          <div class="space-y-4">
+      </div>
+      {% else %}
+      <div class="flex items-center gap-3 px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+        <span class="w-8 h-8 rounded-full step-num text-white text-sm font-bold flex items-center justify-center flex-shrink-0">1</span>
+        <h2 class="text-lg font-bold tracking-tight">Name your template</h2>
+      </div>
+      <div class="p-6">
+        <form method="POST" action="/portal/staff/templates">
+          <p class="text-sm text-gray-400 mb-5">Give your template a name so your team can find it easily.</p>
+          <div class="space-y-5 max-w-md">
             <div>
-              <label class="block text-xs font-medium text-gray-600 mb-1">Email subject</label>
+              <label class="block text-sm font-medium text-gray-600 mb-1">Template name <span class="text-red-400">*</span></label>
+              <input
+                type="text"
+                name="name"
+                required
+                placeholder="e.g. Mortgage Application Pack"
+                class="w-full border border-gray-200 rounded-lg px-3.5 py-2 text-base focus:outline-none focus:ring-2 ring-brand"
+                autofocus
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-600 mb-1">Description <span class="text-gray-400 font-normal">(optional)</span></label>
+              <input
+                type="text"
+                name="description"
+                placeholder="Brief note about when to use this template"
+                class="w-full border border-gray-200 rounded-lg px-3.5 py-2 text-base focus:outline-none focus:ring-2 ring-brand"
+              />
+            </div>
+          </div>
+          <div class="mt-5">
+            <button
+              type="submit"
+              class="text-sm font-medium btn-brand px-5 py-2 rounded-lg transition-colors"
+            >
+              Continue &rarr;
+            </button>
+          </div>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if tmpl %}
+    <!-- ============================================================ -->
+    <!-- STEP 2: What documents do you need?                           -->
+    <!-- ============================================================ -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <button type="button" onclick="toggleStep('step2')" class="w-full flex items-center gap-3 px-6 py-4 border-b border-gray-100 bg-gray-50/50 text-left hover:bg-gray-50 transition-colors">
+        <span class="w-8 h-8 rounded-full step-num text-white text-sm font-bold flex items-center justify-center flex-shrink-0">2</span>
+        <h2 class="text-lg font-bold tracking-tight">What documents do you need?</h2>
+        <span class="ml-auto text-sm text-gray-400" id="item-count">{{ items | length }} item{{ 's' if items | length != 1 }}</span>
+        <svg id="step2-chevron" class="w-5 h-5 text-gray-400 transition-transform rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </button>
+      <div id="step2-body">
+
+      <!-- Existing items — compact card rows -->
+      <div id="items-list" class="divide-y divide-gray-100">
+        {% for item in items %}
+        <div class="px-6 py-3.5 flex items-center gap-3 group" id="row-{{ item.id }}">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2.5">
+              {% if item.item_type == 'signature' %}
+              <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-purple-100 text-purple-700 flex-shrink-0">Sign</span>
+              {% else %}
+              <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-500 flex-shrink-0">Upload</span>
+              {% endif %}
+              <span class="text-base font-medium text-gray-900 truncate item-title">{{ item.title }}</span>
+              {% if item.instructions %}
+              <span class="text-sm text-gray-400 truncate hidden sm:inline">&mdash; {{ item.instructions }}</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="flex items-center gap-3 flex-shrink-0">
+            {% if item.item_type == 'signature' and item.file_key %}
+            <button
+              type="button"
+              onclick="openZoneBuilder('{{ item.id }}')"
+              class="inline-flex items-center gap-1.5 text-sm font-medium text-purple-600 hover:text-purple-800 transition-colors"
+              id="zone-btn-{{ item.id }}"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+              Zones ({{ item.zone_count }})
+            </button>
+            <span class="text-gray-200">|</span>
+            {% endif %}
+            <button
+              onclick="editItemInline('{{ item.id }}')"
+              class="text-sm text-gray-400 hover:text-gray-700 transition-colors"
+            >
+              Edit
+            </button>
+            <button
+              onclick="deleteItem('{{ tmpl.id }}', '{{ item.id }}')"
+              class="text-sm text-gray-400 hover:text-red-500 transition-colors"
+            >
+              Remove
+            </button>
+          </div>
+          <!-- Hidden inline edit fields -->
+          <input type="hidden" data-field="title" value="{{ item.title }}" />
+          <input type="hidden" data-field="instructions" value="{{ item.instructions or '' }}" />
+        </div>
+        {% endfor %}
+      </div>
+
+      {% if not items %}
+      <div class="px-6 py-8 text-center">
+        <p class="text-sm text-gray-400">No documents added yet. Add your first one below.</p>
+      </div>
+      {% endif %}
+
+      <!-- Add new item — visually distinct -->
+      <div class="border-t-2 border-gray-200">
+        <div class="px-6 py-5 bg-gray-50/80">
+          <p class="text-base font-semibold text-gray-900 mb-0.5">Add a document</p>
+          <p class="text-sm text-gray-400 mb-4">Choose the type, then fill in the details.</p>
+
+          <!-- Type selection — compact inline pills, not full-width cards -->
+          <div class="flex items-center gap-2 mb-4" id="type-cards">
+            <button type="button" onclick="selectItemType('file_upload')" id="card-file_upload"
+              class="inline-flex items-center gap-2 border-2 border-brand bg-white rounded-lg px-4 py-2 text-sm font-medium transition-all hover:shadow-sm">
+              <i data-lucide="upload" class="w-4 h-4 text-gray-600"></i>
+              File upload
+            </button>
+            <button type="button" onclick="selectItemType('signature')" id="card-signature"
+              class="inline-flex items-center gap-2 border-2 border-gray-200 bg-white rounded-lg px-4 py-2 text-sm font-medium transition-all hover:shadow-sm hover:border-gray-300">
+              <i data-lucide="pen-tool" class="w-4 h-4 text-purple-600"></i>
+              Document to sign
+            </button>
+          </div>
+
+          <input type="hidden" id="new-item-type" value="file_upload" />
+
+          <div class="space-y-3 max-w-md">
+            <div>
+              <label class="block text-sm font-medium text-gray-600 mb-1">Title</label>
+              <input
+                type="text"
+                id="new-title"
+                placeholder="e.g. Proof of address"
+                class="w-full text-base border border-gray-200 rounded-lg px-3.5 py-2 bg-white focus:outline-none focus:ring-2 ring-brand"
+                onkeydown="if(event.key==='Enter'){event.preventDefault();addItem();}"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-600 mb-1">Instructions <span class="text-gray-400 font-normal">(optional)</span></label>
+              <textarea
+                id="new-instructions"
+                rows="2"
+                placeholder="e.g. Must be dated within the last 3 months"
+                class="w-full text-sm border border-gray-200 rounded-lg px-3.5 py-2 bg-white text-gray-600 focus:outline-none focus:ring-2 ring-brand"
+              ></textarea>
+            </div>
+            <div id="new-file-upload" class="hidden">
+              <label class="block text-sm font-medium text-gray-600 mb-1">PDF to sign</label>
+              <input type="file" id="new-file" accept=".pdf" class="text-sm" />
+              <p class="text-xs text-amber-600 mt-1">Only PDF files accepted.</p>
+              <p class="text-xs text-gray-400 mt-1">You can configure signing zones after adding.</p>
+              <p id="new-file-status" class="text-sm text-gray-400 mt-1"></p>
+            </div>
+            <div class="pt-1">
+              <button
+                onclick="addItem()"
+                class="text-sm font-medium btn-brand px-4 py-2 rounded-lg transition-colors"
+              >
+                Add to template
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div><!-- /step2-body -->
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- STEP 3: Customise the email (optional)                        -->
+    <!-- ============================================================ -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <button type="button" onclick="toggleStep3()" class="w-full flex items-center gap-3 px-6 py-4 border-b border-gray-100 bg-gray-50/50 text-left hover:bg-gray-50 transition-colors">
+        <span class="w-8 h-8 rounded-full bg-gray-300 text-white text-sm font-bold flex items-center justify-center flex-shrink-0">3</span>
+        <h2 class="text-lg font-bold tracking-tight text-gray-500">Customise the email</h2>
+        <span class="text-sm text-gray-400">Optional</span>
+        <svg id="step3-chevron" class="w-5 h-5 text-gray-400 ml-auto transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </button>
+      <div id="step3-body" class="hidden">
+        <form method="POST" action="/portal/staff/templates/{{ tmpl.id }}" class="p-6">
+          <p class="text-sm text-gray-400 mb-5">Customise what clients see when they receive the email. Leave blank for defaults.</p>
+          <input type="hidden" name="name" value="{{ tmpl.name }}" />
+          <input type="hidden" name="description" value="{{ tmpl.description or '' }}" />
+          <div class="space-y-5">
+            <div>
+              <label class="block text-sm font-medium text-gray-600 mb-1.5">Email subject</label>
               <input
                 type="text"
                 name="email_subject"
                 value="{{ tmpl.email_subject or '' }}"
                 placeholder="Documents requested — {{ '{{' }} brand_name {{ '}}' }}"
-                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                class="w-full max-w-lg border border-gray-200 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 ring-brand"
               />
-              <p class="text-xs text-gray-400 mt-1">Supports {{ '{{' }} brand_name {{ '}}' }} and {{ '{{' }} client_name {{ '}}' }} placeholders.</p>
+              <p class="text-sm text-gray-400 mt-1.5">Supports {{ '{{' }} brand_name {{ '}}' }} and {{ '{{' }} client_name {{ '}}' }} placeholders.</p>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-600 mb-1">Email body</label>
+              <label class="block text-sm font-medium text-gray-600 mb-1.5">Email body</label>
               <textarea
                 name="email_body"
                 rows="3"
                 placeholder="We need a few documents from you. Please click the link below to view what's needed and upload securely."
-                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                class="w-full max-w-lg border border-gray-200 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 ring-brand"
               >{{ tmpl.email_body or '' }}</textarea>
-              <p class="text-xs text-gray-400 mt-1">The main body text above the "View & Upload Documents" button.</p>
+              <p class="text-sm text-gray-400 mt-1.5">The main body text above the "View & Upload Documents" button.</p>
             </div>
           </div>
-        </div>
-        {% endif %}
-
-        <div class="mt-4">
-          <button
-            type="submit"
-            class="text-sm font-medium bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors"
-          >
-            {% if tmpl %}Save changes{% else %}Create template{% endif %}
-          </button>
-        </div>
-      </form>
-    </div>
-
-    {% if tmpl %}
-    <!-- Items -->
-    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-        <h2 class="text-sm font-semibold">Checklist items</h2>
-        <span class="text-xs text-gray-400" id="item-count">{{ items | length }} item{{ 's' if items | length != 1 }}</span>
-      </div>
-
-      <div id="items-list" class="divide-y divide-gray-100">
-        {% for item in items %}
-        <div class="px-5 py-3 flex items-start gap-3" id="row-{{ item.id }}">
-          <div class="flex-1 space-y-1.5">
-            <div class="flex items-center gap-2">
-              <input
-                type="text"
-                value="{{ item.title }}"
-                placeholder="Document title"
-                class="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-gray-900"
-                onblur="updateItem('{{ item.id }}', this)"
-                data-field="title"
-              />
-              {% if item.item_type == 'signature' %}
-              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700 flex-shrink-0">Sign</span>
-              {% else %}
-              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 flex-shrink-0">Upload</span>
-              {% endif %}
-            </div>
-            <input
-              type="text"
-              value="{{ item.instructions or '' }}"
-              placeholder="Instructions (optional)"
-              class="w-full text-xs border border-gray-100 rounded-lg px-3 py-1.5 text-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-300"
-              onblur="updateItem('{{ item.id }}', this)"
-              data-field="instructions"
-            />
-            {% if item.item_type == 'signature' and item.file_key %}
-            <div class="flex items-center gap-3">
-              <p class="text-xs text-gray-400">Document attached</p>
-              <button
-                type="button"
-                onclick="openZoneBuilder('{{ item.id }}')"
-                class="text-xs font-medium text-purple-600 hover:underline"
-                id="zone-btn-{{ item.id }}"
-              >Edit zones ({{ item.zone_count }} defined)</button>
-            </div>
-            {% endif %}
-          </div>
-          <div class="flex items-center gap-3 pt-1.5 flex-shrink-0">
-            <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
-              <input
-                type="checkbox"
-                {% if item.required %}checked{% endif %}
-                onchange="updateItemRequired('{{ item.id }}', this)"
-                class="rounded"
-              />
-              Required
-            </label>
+          <div class="mt-5">
             <button
-              onclick="deleteItem('{{ tmpl.id }}', '{{ item.id }}')"
-              class="text-xs text-gray-400 hover:text-red-500 transition-colors"
+              type="submit"
+              class="text-sm font-medium text-gray-500 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors"
             >
-              Remove
+              Save email settings
             </button>
           </div>
-        </div>
-        {% endfor %}
-      </div>
-
-      <!-- Add item row -->
-      <div class="px-5 py-4 border-t border-gray-100 bg-gray-50">
-        <div class="flex items-start gap-3">
-          <div class="flex-1 space-y-1.5">
-            <div class="flex items-center gap-2">
-              <input
-                type="text"
-                id="new-title"
-                placeholder="New item title"
-                class="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-gray-900"
-                onkeydown="if(event.key==='Enter'){event.preventDefault();addItem();}"
-              />
-              <select id="new-item-type" onchange="toggleFileUpload()" class="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white">
-                <option value="file_upload">File upload</option>
-                <option value="signature">Document to sign</option>
-              </select>
-            </div>
-            <input
-              type="text"
-              id="new-instructions"
-              placeholder="Instructions (optional)"
-              class="w-full text-xs border border-gray-100 rounded-lg px-3 py-1.5 bg-white text-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-300"
-              onkeydown="if(event.key==='Enter'){event.preventDefault();addItem();}"
-            />
-            <div id="new-file-upload" class="hidden">
-              <input type="file" id="new-file" accept=".pdf,.doc,.docx" class="text-xs" />
-              <p id="new-file-status" class="text-xs text-gray-400 mt-1"></p>
-            </div>
-          </div>
-          <div class="flex items-center gap-3 pt-1.5 flex-shrink-0">
-            <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
-              <input type="checkbox" id="new-required" checked class="rounded" />
-              Required
-            </label>
-            <button
-              onclick="addItem()"
-              class="text-xs font-medium border border-gray-300 px-3 py-1.5 rounded-lg hover:bg-white transition-colors"
-            >
-              Add item
-            </button>
-          </div>
-        </div>
+        </form>
       </div>
     </div>
+
     {% endif %}
 
-  </div>
+</div>
 
-  <!-- Zone builder modal -->
-  <div id="zoneBuilderModal" class="hidden fixed inset-0 bg-black/50 z-50 flex flex-col">
-    <div class="bg-white flex flex-col h-full">
-      <!-- Header -->
-      <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-        <h2 class="text-sm font-semibold" id="zb-title">Zone Builder</h2>
-        <div class="flex items-center gap-4">
-          <!-- Type toolbar -->
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-gray-400">Add:</span>
-            <button onclick="setActiveType('signature')" id="tb-signature"
-              class="text-xs px-2.5 py-1 rounded-full border-2 border-purple-400 bg-purple-50 text-purple-700 font-medium">Signature</button>
-            <button onclick="setActiveType('text')" id="tb-text"
-              class="text-xs px-2.5 py-1 rounded-full border border-gray-200 text-gray-500">Text</button>
-            <button onclick="setActiveType('date')" id="tb-date"
-              class="text-xs px-2.5 py-1 rounded-full border border-gray-200 text-gray-500">Date</button>
-          </div>
-          <div class="h-4 w-px bg-gray-200"></div>
-          <!-- Page nav -->
-          <div class="flex items-center gap-2">
-            <button onclick="zbChangePage(-1)" class="text-xs border border-gray-200 px-2 py-1 rounded hover:bg-gray-50">&larr;</button>
-            <span id="zb-page-info" class="text-xs text-gray-500">Page 1 / 1</span>
-            <button onclick="zbChangePage(1)" class="text-xs border border-gray-200 px-2 py-1 rounded hover:bg-gray-50">&rarr;</button>
-          </div>
-        </div>
+<!-- Zone builder modal -->
+<div id="zoneBuilderModal" class="hidden fixed inset-0 bg-black/50 z-50 flex flex-col">
+  <div class="bg-white flex flex-col h-full">
+
+    <!-- Top bar: title / page nav / zoom -->
+    <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between flex-shrink-0 bg-white">
+      <div class="flex items-center gap-3">
+        <button onclick="closeZoneBuilder()" class="w-9 h-9 rounded-lg border border-gray-200 hover:bg-gray-50 flex items-center justify-center transition-colors" title="Close">
+          <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+        <button onclick="saveAllZones()" class="w-9 h-9 rounded-lg border border-gray-200 hover:bg-gray-50 flex items-center justify-center transition-colors" title="Save all zones">
+          <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+        </button>
+        <h2 class="text-lg font-bold text-gray-900 truncate max-w-xs" id="zb-title">Zone Builder</h2>
       </div>
-
-      <!-- Body -->
-      <div class="flex-1 flex overflow-hidden">
-        <!-- PDF viewport -->
-        <div class="flex-1 overflow-auto bg-gray-100 flex justify-center p-4" id="zb-viewport">
-          <div id="zb-pdf-container" class="relative inline-block" style="user-select:none;">
-            <canvas id="zb-canvas"></canvas>
-            <!-- Zone divs rendered here dynamically -->
-          </div>
-        </div>
-        <!-- Sidebar -->
-        <div class="w-56 border-l border-gray-200 bg-white flex flex-col flex-shrink-0">
-          <div class="px-3 py-2 border-b border-gray-100">
-            <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Zones</h3>
-          </div>
-          <div id="zb-sidebar" class="flex-1 overflow-y-auto divide-y divide-gray-50">
-            <p class="px-3 py-4 text-xs text-gray-400 text-center" id="zb-sidebar-empty">Click on the document to add zones</p>
-          </div>
-        </div>
+      <div class="flex items-center gap-3">
+        <button onclick="zbChangePage(-1)" class="text-base font-medium border border-gray-200 w-9 h-9 rounded-lg hover:bg-gray-50 flex items-center justify-center">&larr;</button>
+        <span id="zb-page-info" class="text-base font-medium text-gray-700 min-w-[100px] text-center">Page 1 of 1</span>
+        <button onclick="zbChangePage(1)" class="text-base font-medium border border-gray-200 w-9 h-9 rounded-lg hover:bg-gray-50 flex items-center justify-center">&rarr;</button>
       </div>
-
-      <!-- Footer -->
-      <div class="px-5 py-3 border-t border-gray-200 flex items-center justify-between flex-shrink-0">
-        <p class="text-xs text-gray-400">Click to place &middot; Arrow keys to move (Shift = 5%) &middot; Delete to remove</p>
-        <div class="flex items-center gap-3">
-          <button onclick="closeZoneBuilder()" class="text-xs text-gray-500 hover:text-gray-900">Cancel</button>
-          <button onclick="saveAllZones()" class="text-xs font-medium bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-700">Save all zones</button>
-        </div>
+      <div class="flex items-center gap-2">
+        <button onclick="zbZoom(-0.25)" class="text-base font-bold border border-gray-200 w-9 h-9 rounded-lg hover:bg-gray-50 flex items-center justify-center">&minus;</button>
+        <span id="zb-zoom-info" class="text-base font-medium text-gray-600 min-w-[48px] text-center">150%</span>
+        <button onclick="zbZoom(0.25)" class="text-base font-bold border border-gray-200 w-9 h-9 rounded-lg hover:bg-gray-50 flex items-center justify-center">+</button>
+        <button onclick="zbZoomReset()" class="text-sm font-medium border border-gray-200 px-3 h-9 rounded-lg hover:bg-gray-50 text-gray-500">Reset</button>
       </div>
     </div>
-  </div>
 
-  <script>
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    <!-- 3-column body -->
+    <div class="flex-1 flex overflow-hidden">
 
-    const TEMPLATE_ID = "{{ tmpl.id if tmpl else '' }}";
-
-    const itemState = {};
-    {% for item in items %}
-    itemState["{{ item.id }}"] = {
-      title: {{ item.title | tojson }},
-      instructions: {{ (item.instructions or '') | tojson }},
-      required: {{ 'true' if item.required else 'false' }},
-      item_type: {{ (item.item_type or 'file_upload') | tojson }},
-      file_key: {{ (item.file_key or '') | tojson }},
-      sig_page: {{ item.sig_page if item.sig_page is not none else 'null' }},
-      sig_x: {{ item.sig_x if item.sig_x is not none else 'null' }},
-      sig_y: {{ item.sig_y if item.sig_y is not none else 'null' }},
-      sig_w: {{ item.sig_w if item.sig_w is not none else 'null' }},
-      sig_h: {{ item.sig_h if item.sig_h is not none else 'null' }},
-      zone_count: {{ item.zone_count }},
-    };
-    {% endfor %}
-
-    // -----------------------------------------------------------------------
-    // Basic item CRUD (unchanged)
-    // -----------------------------------------------------------------------
-
-    function toggleFileUpload() {
-      const type = document.getElementById('new-item-type').value;
-      document.getElementById('new-file-upload').classList.toggle('hidden', type !== 'signature');
-    }
-
-    function updateItemCount() {
-      const rows = document.querySelectorAll('#items-list > div');
-      const n = rows.length;
-      document.getElementById('item-count').textContent = n + ' item' + (n !== 1 ? 's' : '');
-    }
-
-    async function addItem() {
-      const titleEl = document.getElementById('new-title');
-      const instrEl = document.getElementById('new-instructions');
-      const reqEl   = document.getElementById('new-required');
-      const typeEl  = document.getElementById('new-item-type');
-      const title = titleEl.value.trim();
-      if (!title) { titleEl.focus(); return; }
-
-      const item_type = typeEl.value;
-      let file_key = null;
-
-      if (item_type === 'signature') {
-        const fileInput = document.getElementById('new-file');
-        const file = fileInput.files[0];
-        if (!file) { alert('Please select a document to sign'); return; }
-
-        const statusEl = document.getElementById('new-file-status');
-        statusEl.textContent = 'Uploading document...';
-
-        try {
-          const formData = new FormData();
-          formData.append('file', file);
-          const uploadRes = await fetch(`/portal/staff/templates/${TEMPLATE_ID}/upload-doc`, {
-            method: 'POST',
-            body: formData,
-          });
-          if (!uploadRes.ok) { alert('Upload failed: ' + uploadRes.status); statusEl.textContent = ''; return; }
-          const { file_key: fk } = await uploadRes.json();
-          file_key = fk;
-          statusEl.textContent = '';
-        } catch (err) {
-          console.error('Upload error:', err);
-          alert('Upload failed: ' + err.message);
-          statusEl.textContent = '';
-          return;
-        }
-      }
-
-      const res = await fetch(`/portal/staff/templates/${TEMPLATE_ID}/items`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, instructions: instrEl.value.trim(), required: reqEl.checked, item_type, file_key }),
-      });
-      if (!res.ok) { alert('Failed to add item'); return; }
-      const item = await res.json();
-
-      const typeBadge = item.item_type === 'signature'
-        ? '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700 flex-shrink-0">Sign</span>'
-        : '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 flex-shrink-0">Upload</span>';
-
-      const zoneBtn = (item.item_type === 'signature' && item.file_key)
-        ? `<div class="flex items-center gap-3">
-             <p class="text-xs text-gray-400">Document attached</p>
-             <button type="button" onclick="openZoneBuilder('${item.id}')" id="zone-btn-${item.id}"
-               class="text-xs font-medium text-purple-600 hover:underline">Edit zones (0 defined)</button>
-           </div>` : '';
-
-      const list = document.getElementById('items-list');
-      const div = document.createElement('div');
-      div.className = 'px-5 py-3 flex items-start gap-3';
-      div.id = `row-${item.id}`;
-      div.innerHTML = `
-        <div class="flex-1 space-y-1.5">
-          <div class="flex items-center gap-2">
-            <input type="text" value="${escHtml(item.title)}" placeholder="Document title"
-              class="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-gray-900"
-              onblur="updateItem('${item.id}', this)" data-field="title" />
-            ${typeBadge}
+      <!-- LEFT PANEL: Add zones + instructions -->
+      <div class="w-56 border-r border-gray-200 bg-gray-50 flex flex-col flex-shrink-0">
+        <div class="px-4 py-4">
+          <h3 class="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">Add Zone</h3>
+          <p class="text-sm text-gray-500 mb-4">Select a type, then click on the document to place it.</p>
+          <div class="space-y-2">
+            <button onclick="setActiveType('signature')" id="tb-signature"
+              class="w-full flex items-center gap-3 px-4 py-3 rounded-lg border-2 border-purple-400 bg-purple-50 text-left transition-all">
+              <span class="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+              </span>
+              <span class="text-base font-semibold text-purple-700">Signature</span>
+            </button>
+            <button onclick="setActiveType('text')" id="tb-text"
+              class="w-full flex items-center gap-3 px-4 py-3 rounded-lg border-2 border-gray-200 bg-white text-left transition-all hover:border-gray-300">
+              <span class="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+              </span>
+              <span class="text-base font-semibold text-gray-700">Text</span>
+            </button>
+            <button onclick="setActiveType('date')" id="tb-date"
+              class="w-full flex items-center gap-3 px-4 py-3 rounded-lg border-2 border-gray-200 bg-white text-left transition-all hover:border-gray-300">
+              <span class="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+              </span>
+              <span class="text-base font-semibold text-gray-700">Date</span>
+            </button>
           </div>
-          <input type="text" value="${escHtml(item.instructions || '')}" placeholder="Instructions (optional)"
-            class="w-full text-xs border border-gray-100 rounded-lg px-3 py-1.5 text-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-300"
-            onblur="updateItem('${item.id}', this)" data-field="instructions" />
-          ${zoneBtn}
         </div>
-        <div class="flex items-center gap-3 pt-1.5 flex-shrink-0">
-          <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
-            <input type="checkbox" ${item.required ? 'checked' : ''} onchange="updateItemRequired('${item.id}', this)" class="rounded" />
-            Required
-          </label>
-          <button onclick="deleteItem('${TEMPLATE_ID}', '${item.id}')" class="text-xs text-gray-400 hover:text-red-500 transition-colors">Remove</button>
-        </div>`;
-      list.appendChild(div);
 
-      itemState[item.id] = {
-        title: item.title, instructions: item.instructions || '', required: item.required,
-        item_type: item.item_type, file_key: item.file_key || '',
-        sig_page: null, sig_x: null, sig_y: null, sig_w: null, sig_h: null,
-        zone_count: 0,
-      };
-      titleEl.value = '';
-      instrEl.value = '';
-      reqEl.checked = true;
-      typeEl.value = 'file_upload';
-      toggleFileUpload();
+        <!-- Instructions -->
+        <div class="mt-auto px-4 py-4 border-t border-gray-200">
+          <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">How to use</h4>
+          <ul class="space-y-2.5 text-sm text-gray-600">
+            <li class="flex items-start gap-2">
+              <svg class="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2z"/></svg>
+              <span><strong>Click</strong> on the document to place</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <svg class="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m-12 4h12m-12 4h12"/></svg>
+              <span><strong>Arrow keys</strong> to nudge (Shift = 5%)</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <svg class="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+              <span><strong>Drag corners</strong> to resize</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <svg class="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              <span><strong>Delete</strong> key to remove</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- CENTER: PDF viewer -->
+      <div class="flex-1 overflow-auto bg-gray-100 flex justify-center p-6" id="zb-viewport">
+        <div id="zb-pdf-container" class="relative inline-block" style="user-select:none;">
+          <canvas id="zb-canvas"></canvas>
+        </div>
+      </div>
+
+      <!-- RIGHT PANEL: Placed zones -->
+      <div class="w-72 border-l border-gray-200 bg-gray-50 flex flex-col flex-shrink-0">
+        <div class="px-4 py-4 border-b border-gray-200">
+          <h3 class="text-sm font-bold text-gray-900 uppercase tracking-wider">Placed Zones</h3>
+          <p class="text-sm text-gray-500 mt-1" id="zb-zone-count">0 zones</p>
+        </div>
+        <div id="zb-sidebar" class="flex-1 overflow-y-auto">
+          <p class="px-4 py-8 text-sm text-gray-500 text-center" id="zb-sidebar-empty">Click on the document to place your first zone</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Footer: Cancel + Save only -->
+    <div class="px-6 py-4 border-t border-gray-200 flex items-center justify-end flex-shrink-0 bg-white">
+      <div class="flex items-center gap-3">
+        <button onclick="closeZoneBuilder()" class="text-base text-gray-500 hover:text-gray-900 px-4 py-2">Cancel</button>
+        <button onclick="saveAllZones()" class="text-base font-medium btn-brand px-6 py-2.5 rounded-lg">Save all zones</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+
+  const TEMPLATE_ID = "{{ tmpl.id if tmpl else '' }}";
+
+  const itemState = {};
+  {% for item in items %}
+  itemState["{{ item.id }}"] = {
+    title: {{ item.title | tojson }},
+    instructions: {{ (item.instructions or '') | tojson }},
+    required: {{ 'true' if item.required else 'false' }},
+    item_type: {{ (item.item_type or 'file_upload') | tojson }},
+    file_key: {{ (item.file_key or '') | tojson }},
+    sig_page: {{ item.sig_page if item.sig_page is not none else 'null' }},
+    sig_x: {{ item.sig_x if item.sig_x is not none else 'null' }},
+    sig_y: {{ item.sig_y if item.sig_y is not none else 'null' }},
+    sig_w: {{ item.sig_w if item.sig_w is not none else 'null' }},
+    sig_h: {{ item.sig_h if item.sig_h is not none else 'null' }},
+    zone_count: {{ item.zone_count }},
+  };
+  {% endfor %}
+
+  // -----------------------------------------------------------------------
+  // Basic item CRUD (unchanged)
+  // -----------------------------------------------------------------------
+
+  function toggleStep(stepId) {
+    const body = document.getElementById(stepId + '-body');
+    const chevron = document.getElementById(stepId + '-chevron');
+    if (!body) return;
+    body.classList.toggle('hidden');
+    if (chevron) chevron.style.transform = body.classList.contains('hidden') ? '' : 'rotate(180deg)';
+  }
+
+  const _emailSubject = {{ (tmpl.email_subject or '') | tojson if tmpl else '""' }};
+  const _emailBody = {{ (tmpl.email_body or '') | tojson if tmpl else '""' }};
+
+  let _saveNameTimer = null;
+  async function autoSaveName() {
+    clearTimeout(_saveNameTimer);
+    _saveNameTimer = setTimeout(async () => {
+      const name = document.getElementById('tmpl-name').value.trim();
+      const description = document.getElementById('tmpl-description').value.trim();
+      if (!name) return;
+      await fetch(`/portal/staff/templates/${TEMPLATE_ID}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ name, description, email_subject: _emailSubject, email_body: _emailBody }),
+        redirect: 'follow',
+      });
+      // Update page title
+      const h1 = document.querySelector('h1');
+      if (h1) h1.textContent = name;
+    }, 500);
+  }
+
+  function selectItemType(type) {
+    document.getElementById('new-item-type').value = type;
+    const upload = document.getElementById('card-file_upload');
+    const sign = document.getElementById('card-signature');
+    if (type === 'file_upload') {
+      upload.className = 'inline-flex items-center gap-2 border-2 border-brand bg-white rounded-lg px-4 py-2 text-sm font-medium transition-all hover:shadow-sm';
+      sign.className = 'inline-flex items-center gap-2 border-2 border-gray-200 bg-white rounded-lg px-4 py-2 text-sm font-medium transition-all hover:shadow-sm hover:border-gray-300';
+    } else {
+      sign.className = 'inline-flex items-center gap-2 border-2 border-brand bg-white rounded-lg px-4 py-2 text-sm font-medium transition-all hover:shadow-sm';
+      upload.className = 'inline-flex items-center gap-2 border-2 border-gray-200 bg-white rounded-lg px-4 py-2 text-sm font-medium transition-all hover:shadow-sm hover:border-gray-300';
+    }
+    toggleFileUpload();
+  }
+
+  function toggleFileUpload() {
+    const type = document.getElementById('new-item-type').value;
+    document.getElementById('new-file-upload').classList.toggle('hidden', type !== 'signature');
+  }
+
+  function toggleStep3() {
+    const body = document.getElementById('step3-body');
+    const chevron = document.getElementById('step3-chevron');
+    body.classList.toggle('hidden');
+    chevron.style.transform = body.classList.contains('hidden') ? '' : 'rotate(180deg)';
+  }
+
+  function updateItemCount() {
+    const rows = document.querySelectorAll('#items-list > div');
+    const n = rows.length;
+    document.getElementById('item-count').textContent = n + ' item' + (n !== 1 ? 's' : '');
+  }
+
+  async function addItem() {
+    const titleEl = document.getElementById('new-title');
+    const instrEl = document.getElementById('new-instructions');
+    const typeEl  = document.getElementById('new-item-type');
+    const title = titleEl.value.trim();
+    if (!title) { titleEl.focus(); return; }
+
+    const item_type = typeEl.value;
+    let file_key = null;
+
+    if (item_type === 'signature') {
       const fileInput = document.getElementById('new-file');
-      if (fileInput) fileInput.value = '';
-      titleEl.focus();
-      updateItemCount();
+      const file = fileInput.files[0];
+      if (!file) { alert('Please select a PDF document to sign'); return; }
 
-      // Auto-open zone builder for new signature items
-      if (item.item_type === 'signature' && item.file_key) {
-        setTimeout(() => openZoneBuilder(item.id), 300);
-      }
-    }
-
-    async function updateItem(itemId, input) {
-      const field = input.dataset.field;
-      if (!itemState[itemId]) itemState[itemId] = {};
-      itemState[itemId][field] = input.value.trim();
-
-      await fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${itemId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(itemState[itemId]),
-      });
-    }
-
-    async function updateItemRequired(itemId, checkbox) {
-      if (!itemState[itemId]) itemState[itemId] = {};
-      itemState[itemId].required = checkbox.checked;
-
-      await fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${itemId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(itemState[itemId]),
-      });
-    }
-
-    async function deleteItem(templateId, itemId) {
-      if (!confirm('Remove this item?')) return;
-      const res = await fetch(`/portal/staff/templates/${templateId}/items/${itemId}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) { alert('Failed to remove item'); return; }
-      const row = document.getElementById(`row-${itemId}`);
-      if (row) row.remove();
-      delete itemState[itemId];
-      updateItemCount();
-    }
-
-    function escHtml(str) {
-      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-    }
-
-    // -----------------------------------------------------------------------
-    // Zone builder
-    // -----------------------------------------------------------------------
-
-    const ZONE_DEFAULTS = {
-      signature: { w: 25, h: 8, label: 'Signature' },
-      text:      { w: 20, h: 4, label: 'Text field' },
-      date:      { w: 15, h: 4, label: 'Date' },
-    };
-    const ZONE_COLORS = {
-      signature: { border: 'border-purple-500', bg: 'bg-purple-100/30', text: 'text-purple-700', ring: 'ring-purple-400',
-                   tbBorder: 'border-purple-400', tbBg: 'bg-purple-50', tbText: 'text-purple-700' },
-      text:      { border: 'border-blue-500', bg: 'bg-blue-100/30', text: 'text-blue-700', ring: 'ring-blue-400',
-                   tbBorder: 'border-blue-400', tbBg: 'bg-blue-50', tbText: 'text-blue-700' },
-      date:      { border: 'border-green-500', bg: 'bg-green-100/30', text: 'text-green-700', ring: 'ring-green-400',
-                   tbBorder: 'border-green-400', tbBg: 'bg-green-50', tbText: 'text-green-700' },
-    };
-    const MIN_ZONE_PCT = { w: 5, h: 2 };
-
-    let zbOpen = false;
-    let zbItemId = null;
-    let zbPdfDoc = null;
-    let zbCurrentPage = 1;
-    let zbCanvasW = 0, zbCanvasH = 0;
-    let zbActiveType = 'signature';
-    let zbSelectedId = null;
-    const zbZones = {};  // id -> zone object
-
-    // Drag/resize state
-    let zbDragging = null;   // { zoneId, offX, offY }
-    let zbResizing = null;   // { zoneId, handle, startX, startY, startZone: {x,y,w,h} }
-    let zbJustDragged = false; // prevents canvas click after drag
-
-    function setActiveType(type) {
-      zbActiveType = type;
-      for (const t of ['signature', 'text', 'date']) {
-        const btn = document.getElementById('tb-' + t);
-        const c = ZONE_COLORS[t];
-        if (t === type) {
-          btn.className = `text-xs px-2.5 py-1 rounded-full border-2 ${c.tbBorder} ${c.tbBg} ${c.tbText} font-medium`;
-        } else {
-          btn.className = 'text-xs px-2.5 py-1 rounded-full border border-gray-200 text-gray-500';
-        }
-      }
-    }
-
-    async function openZoneBuilder(itemId) {
-      zbItemId = itemId;
-      zbSelectedId = null;
-      zbActiveType = 'signature';
-      setActiveType('signature');
-
-      // Clear zones
-      for (const k of Object.keys(zbZones)) delete zbZones[k];
-
-      // Load existing zones from server
-      const res = await fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${itemId}/zones`);
-      const data = await res.json();
-      for (const z of data.zones) {
-        zbZones[z.id] = { ...z, _new: false, _dirty: false, _deleted: false };
-      }
-
-      // Load PDF
-      const url = `/portal/staff/templates/${TEMPLATE_ID}/items/${itemId}/pdf-bytes`;
-      const state = itemState[itemId];
-      document.getElementById('zb-title').textContent = 'Zone Builder — ' + (state ? state.title : '');
+      const statusEl = document.getElementById('new-file-status');
+      statusEl.textContent = 'Uploading document...';
 
       try {
-        zbPdfDoc = await pdfjsLib.getDocument(url).promise;
-        zbCurrentPage = 1;
-        zbOpen = true;
-        document.getElementById('zoneBuilderModal').classList.remove('hidden');
-        await zbRenderPage(zbCurrentPage);
-        zbRenderSidebar();
+        const formData = new FormData();
+        formData.append('file', file);
+        const uploadRes = await fetch(`/portal/staff/templates/${TEMPLATE_ID}/upload-doc`, {
+          method: 'POST',
+          body: formData,
+        });
+        if (!uploadRes.ok) { alert('Upload failed: ' + uploadRes.status); statusEl.textContent = ''; return; }
+        const { file_key: fk } = await uploadRes.json();
+        file_key = fk;
+        statusEl.textContent = '';
       } catch (err) {
-        alert('Failed to load PDF: ' + err.message);
-      }
-    }
-
-    function closeZoneBuilder() {
-      document.getElementById('zoneBuilderModal').classList.add('hidden');
-      zbOpen = false;
-      zbItemId = null;
-      zbPdfDoc = null;
-      zbSelectedId = null;
-      // Remove all zone divs
-      const container = document.getElementById('zb-pdf-container');
-      container.querySelectorAll('.zone-div').forEach(el => el.remove());
-    }
-
-    async function zbRenderPage(num) {
-      const page = await zbPdfDoc.getPage(num);
-      const viewport = page.getViewport({ scale: 1.5 });
-      const canvas = document.getElementById('zb-canvas');
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      zbCanvasW = viewport.width;
-      zbCanvasH = viewport.height;
-      const ctx = canvas.getContext('2d');
-      await page.render({ canvasContext: ctx, viewport }).promise;
-
-      document.getElementById('zb-page-info').textContent = `Page ${num} / ${zbPdfDoc.numPages}`;
-      zbSelectedId = null;
-      zbRenderAllZones();
-    }
-
-    function zbChangePage(delta) {
-      if (!zbPdfDoc) return;
-      const next = zbCurrentPage + delta;
-      if (next < 1 || next > zbPdfDoc.numPages) return;
-      zbCurrentPage = next;
-      zbRenderPage(zbCurrentPage);
-    }
-
-    // -----------------------------------------------------------------------
-    // Zone rendering
-    // -----------------------------------------------------------------------
-
-    function zbRenderAllZones() {
-      const container = document.getElementById('zb-pdf-container');
-      container.querySelectorAll('.zone-div').forEach(el => el.remove());
-      for (const id of Object.keys(zbZones)) {
-        const z = zbZones[id];
-        if (z._deleted) continue;
-        if (z.page !== zbCurrentPage - 1) continue;
-        zbCreateZoneDiv(id);
-      }
-    }
-
-    function zbCreateZoneDiv(id) {
-      const z = zbZones[id];
-      const c = ZONE_COLORS[z.zone_type] || ZONE_COLORS.text;
-      const container = document.getElementById('zb-pdf-container');
-
-      const div = document.createElement('div');
-      div.id = 'zd-' + id;
-      div.className = `zone-div absolute border-2 border-dashed ${c.border} ${c.bg} cursor-move flex items-center justify-center`;
-      div.style.left = pctToPx(z.x, zbCanvasW) + 'px';
-      div.style.top = pctToPx(z.y, zbCanvasH) + 'px';
-      div.style.width = pctToPx(z.w, zbCanvasW) + 'px';
-      div.style.height = pctToPx(z.h, zbCanvasH) + 'px';
-
-      if (id === zbSelectedId) {
-        div.classList.add('ring-2', 'ring-offset-1', c.ring);
-      }
-
-      // Label
-      const label = document.createElement('p');
-      label.className = `${c.text} text-xs text-center pointer-events-none select-none truncate px-1`;
-      label.textContent = z.label;
-      div.appendChild(label);
-
-      // Delete button (top-right, outside the box)
-      const delBtn = document.createElement('button');
-      delBtn.className = 'zone-delete-btn absolute -top-3 -right-3 w-5 h-5 bg-red-500 text-white rounded-full text-xs font-bold flex items-center justify-center hover:bg-red-600 cursor-pointer';
-      delBtn.textContent = '\u00d7';
-      delBtn.style.lineHeight = '1';
-      if (id !== zbSelectedId) delBtn.style.display = 'none';
-      delBtn.addEventListener('mousedown', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        zbDeleteZone(id);
-      });
-      div.appendChild(delBtn);
-
-      // Resize handles (4 corners)
-      for (const handle of ['nw', 'ne', 'sw', 'se']) {
-        const h = document.createElement('div');
-        h.className = `absolute w-3 h-3 bg-white border-2 ${c.border} rounded-sm cursor-${handle}-resize`;
-        h.dataset.handle = handle;
-        h.dataset.zoneId = id;
-        if (handle[0] === 'n') h.style.top = '-5px'; else h.style.bottom = '-5px';
-        if (handle[1] === 'w') h.style.left = '-5px'; else h.style.right = '-5px';
-        // Only show handles on selected zone
-        if (id !== zbSelectedId) h.style.display = 'none';
-        h.addEventListener('mousedown', onResizeMousedown);
-        div.appendChild(h);
-      }
-
-      div.addEventListener('mousedown', onZoneMousedown);
-      container.appendChild(div);
-    }
-
-    function zbUpdateZoneDiv(id) {
-      const z = zbZones[id];
-      const div = document.getElementById('zd-' + id);
-      if (!div) return;
-      div.style.left = pctToPx(z.x, zbCanvasW) + 'px';
-      div.style.top = pctToPx(z.y, zbCanvasH) + 'px';
-      div.style.width = pctToPx(z.w, zbCanvasW) + 'px';
-      div.style.height = pctToPx(z.h, zbCanvasH) + 'px';
-    }
-
-    function zbSelectZone(id) {
-      const prevId = zbSelectedId;
-      zbSelectedId = id;
-      // Toggle selection CSS without destroying/recreating divs
-      if (prevId && prevId !== id) zbToggleZoneSelection(prevId, false);
-      if (id) zbToggleZoneSelection(id, true);
-      zbRenderSidebar();
-    }
-
-    function zbToggleZoneSelection(id, selected) {
-      const div = document.getElementById('zd-' + id);
-      if (!div) return;
-      const z = zbZones[id];
-      if (!z) return;
-      const c = ZONE_COLORS[z.zone_type] || ZONE_COLORS.text;
-      // Ring
-      if (selected) {
-        div.classList.add('ring-2', 'ring-offset-1', c.ring);
-      } else {
-        div.classList.remove('ring-2', 'ring-offset-1');
-        for (const col of Object.values(ZONE_COLORS)) div.classList.remove(col.ring);
-      }
-      // Resize handles + delete button visibility
-      div.querySelectorAll('[data-handle]').forEach(h => h.style.display = selected ? '' : 'none');
-      const delBtn = div.querySelector('.zone-delete-btn');
-      if (delBtn) delBtn.style.display = selected ? '' : 'none';
-    }
-
-    // -----------------------------------------------------------------------
-    // Sidebar
-    // -----------------------------------------------------------------------
-
-    function zbRenderSidebar() {
-      const sidebar = document.getElementById('zb-sidebar');
-      const emptyMsg = document.getElementById('zb-sidebar-empty');
-      const allZones = Object.values(zbZones).filter(z => !z._deleted);
-
-      if (allZones.length === 0) {
-        sidebar.innerHTML = '<p class="px-3 py-4 text-xs text-gray-400 text-center" id="zb-sidebar-empty">Click on the document to add zones</p>';
+        console.error('Upload error:', err);
+        alert('Upload failed: ' + err.message);
+        statusEl.textContent = '';
         return;
       }
-
-      allZones.sort((a, b) => a.sort_order - b.sort_order);
-      let html = '';
-      for (const z of allZones) {
-        const c = ZONE_COLORS[z.zone_type] || ZONE_COLORS.text;
-        const selected = z.id === zbSelectedId;
-        const bgClass = selected ? 'bg-gray-50' : '';
-        html += `
-          <div class="px-3 py-2 ${bgClass} cursor-pointer hover:bg-gray-50" onclick="zbSelectZoneAndNav('${z.id}')">
-            <div class="flex items-center gap-2 mb-1">
-              <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${c.bg} ${c.text} ${c.border} border">${z.zone_type}</span>
-              <span class="text-[10px] text-gray-400">p.${z.page + 1}</span>
-              <button onclick="event.stopPropagation(); zbDeleteZone('${z.id}')" class="ml-auto text-[10px] text-gray-300 hover:text-red-500">&times;</button>
-            </div>
-            <input type="text" value="${escHtml(z.label)}" data-zone-id="${z.id}"
-              class="w-full text-xs border border-gray-100 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-gray-300"
-              onclick="event.stopPropagation()"
-              onblur="zbUpdateLabel('${z.id}', this.value)" />
-          </div>`;
-      }
-      sidebar.innerHTML = html;
     }
 
-    function zbSelectZoneAndNav(id) {
-      const z = zbZones[id];
-      if (!z) return;
-      if (z.page !== zbCurrentPage - 1) {
-        zbCurrentPage = z.page + 1;
-        zbRenderPage(zbCurrentPage).then(() => {
-          zbSelectedId = id;
-          zbRenderAllZones();
-          zbRenderSidebar();
-        });
+    const res = await fetch(`/portal/staff/templates/${TEMPLATE_ID}/items`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, instructions: instrEl.value.trim(), required: true, item_type, file_key }),
+    });
+    if (!res.ok) { alert('Failed to add item'); return; }
+    const item = await res.json();
+
+    const typeBadge = item.item_type === 'signature'
+      ? '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-purple-100 text-purple-700 flex-shrink-0">Sign</span>'
+      : '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-500 flex-shrink-0">Upload</span>';
+
+    const zoneLink = (item.item_type === 'signature' && item.file_key)
+      ? `<button type="button" onclick="openZoneBuilder('${item.id}')" id="zone-btn-${item.id}"
+           class="inline-flex items-center gap-1.5 text-sm font-medium text-purple-600 hover:text-purple-800 transition-colors">
+           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+           Zones (0)
+         </button>
+         <span class="text-gray-200">|</span>` : '';
+
+    const instrText = item.instructions ? ` <span class="text-sm text-gray-400 truncate">&mdash; ${escHtml(item.instructions)}</span>` : '';
+
+    const list = document.getElementById('items-list');
+    // Remove empty state if present
+    const emptyState = list.parentElement.querySelector('.text-center');
+    if (emptyState) emptyState.remove();
+
+    const div = document.createElement('div');
+    div.className = 'px-6 py-3.5 flex items-center gap-3 group';
+    div.id = `row-${item.id}`;
+    div.innerHTML = `
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2.5">
+          ${typeBadge}
+          <span class="text-base font-medium text-gray-900 truncate item-title">${escHtml(item.title)}</span>
+          ${instrText}
+        </div>
+      </div>
+      <div class="flex items-center gap-3 flex-shrink-0">
+        ${zoneLink}
+        <button onclick="editItemInline('${item.id}')" class="text-sm text-gray-400 hover:text-gray-700 transition-colors">Edit</button>
+        <button onclick="deleteItem('${TEMPLATE_ID}', '${item.id}')" class="text-sm text-gray-400 hover:text-red-500 transition-colors">Remove</button>
+      </div>
+      <input type="hidden" data-field="title" value="${escHtml(item.title)}" />
+      <input type="hidden" data-field="instructions" value="${escHtml(item.instructions || '')}" />`;
+    list.appendChild(div);
+
+    itemState[item.id] = {
+      title: item.title, instructions: item.instructions || '', required: item.required,
+      item_type: item.item_type, file_key: item.file_key || '',
+      sig_page: null, sig_x: null, sig_y: null, sig_w: null, sig_h: null,
+      zone_count: 0,
+    };
+    titleEl.value = '';
+    instrEl.value = '';
+    selectItemType('file_upload');
+    const fileInput = document.getElementById('new-file');
+    if (fileInput) fileInput.value = '';
+    titleEl.focus();
+    updateItemCount();
+
+    // Auto-open zone builder for new signature items
+    if (item.item_type === 'signature' && item.file_key) {
+      setTimeout(() => openZoneBuilder(item.id), 300);
+    }
+  }
+
+  async function updateItem(itemId, input) {
+    const field = input.dataset.field;
+    if (!itemState[itemId]) itemState[itemId] = {};
+    itemState[itemId][field] = input.value.trim();
+
+    await fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${itemId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(itemState[itemId]),
+    });
+  }
+
+  async function updateItemRequired(itemId, checkbox) {
+    if (!itemState[itemId]) itemState[itemId] = {};
+    itemState[itemId].required = checkbox.checked;
+
+    await fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${itemId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(itemState[itemId]),
+    });
+  }
+
+  async function deleteItem(templateId, itemId) {
+    if (!confirm('Remove this item?')) return;
+    const res = await fetch(`/portal/staff/templates/${templateId}/items/${itemId}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) { alert('Failed to remove item'); return; }
+    const row = document.getElementById(`row-${itemId}`);
+    if (row) row.remove();
+    delete itemState[itemId];
+    updateItemCount();
+  }
+
+  function editItemInline(itemId) {
+    const row = document.getElementById('row-' + itemId);
+    if (!row || row.dataset.editing) return;
+    row.dataset.editing = '1';
+    const state = itemState[itemId];
+    if (!state) return;
+
+    const typeBadge = state.item_type === 'signature'
+      ? '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-purple-100 text-purple-700 flex-shrink-0">Sign</span>'
+      : '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-500 flex-shrink-0">Upload</span>';
+
+    row.className = 'px-6 py-4 bg-gray-50/50';
+    row.innerHTML = `
+      <div class="space-y-2.5 max-w-md">
+        <div class="flex items-center gap-2">
+          ${typeBadge}
+          <input type="text" value="${escHtml(state.title)}" data-field="title"
+            class="flex-1 text-base border border-gray-200 rounded-lg px-3.5 py-2 focus:outline-none focus:ring-2 ring-brand" />
+        </div>
+        <textarea data-field="instructions" rows="2" placeholder="Instructions (optional)"
+          class="w-full text-sm border border-gray-200 rounded-lg px-3.5 py-2 text-gray-600 focus:outline-none focus:ring-1 focus:ring-gray-300">${escHtml(state.instructions || '')}</textarea>
+        <div class="flex items-center gap-3 pt-1">
+          <button onclick="saveItemInline('${itemId}')" class="text-sm font-medium btn-brand px-4 py-1.5 rounded-lg">Save</button>
+          <button onclick="cancelItemInline('${itemId}')" class="text-sm text-gray-400 hover:text-gray-700">Cancel</button>
+        </div>
+      </div>`;
+    row.querySelector('input[data-field="title"]').focus();
+  }
+
+  async function saveItemInline(itemId) {
+    const row = document.getElementById('row-' + itemId);
+    const titleInput = row.querySelector('input[data-field="title"]');
+    const instrInput = row.querySelector('textarea[data-field="instructions"]');
+    const state = itemState[itemId];
+    state.title = titleInput.value.trim();
+    state.instructions = instrInput.value.trim();
+
+    await fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${itemId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state),
+    });
+
+    rebuildItemRow(itemId);
+  }
+
+  function cancelItemInline(itemId) {
+    rebuildItemRow(itemId);
+  }
+
+  function rebuildItemRow(itemId) {
+    const row = document.getElementById('row-' + itemId);
+    const state = itemState[itemId];
+    if (!row || !state) return;
+    delete row.dataset.editing;
+
+    const typeBadge = state.item_type === 'signature'
+      ? '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-purple-100 text-purple-700 flex-shrink-0">Sign</span>'
+      : '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-500 flex-shrink-0">Upload</span>';
+
+    const zoneLink = (state.item_type === 'signature' && state.file_key)
+      ? `<button type="button" onclick="openZoneBuilder('${itemId}')" id="zone-btn-${itemId}"
+           class="inline-flex items-center gap-1.5 text-sm font-medium text-purple-600 hover:text-purple-800 transition-colors">
+           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+           Zones (${state.zone_count || 0})
+         </button>
+         <span class="text-gray-200">|</span>` : '';
+
+    const instrText = state.instructions ? ` <span class="text-sm text-gray-400 truncate">&mdash; ${escHtml(state.instructions)}</span>` : '';
+
+    row.className = 'px-6 py-3.5 flex items-center gap-3 group';
+    row.innerHTML = `
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2.5">
+          ${typeBadge}
+          <span class="text-base font-medium text-gray-900 truncate item-title">${escHtml(state.title)}</span>
+          ${instrText}
+        </div>
+      </div>
+      <div class="flex items-center gap-3 flex-shrink-0">
+        ${zoneLink}
+        <button onclick="editItemInline('${itemId}')" class="text-sm text-gray-400 hover:text-gray-700 transition-colors">Edit</button>
+        <button onclick="deleteItem('${TEMPLATE_ID}', '${itemId}')" class="text-sm text-gray-400 hover:text-red-500 transition-colors">Remove</button>
+      </div>
+      <input type="hidden" data-field="title" value="${escHtml(state.title)}" />
+      <input type="hidden" data-field="instructions" value="${escHtml(state.instructions || '')}" />`;
+  }
+
+  function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // -----------------------------------------------------------------------
+  // Zone builder
+  // -----------------------------------------------------------------------
+
+  const ZONE_DEFAULTS = {
+    signature: { w: 25, h: 8, label: 'Signature' },
+    text:      { w: 20, h: 4, label: 'Text field' },
+    date:      { w: 15, h: 4, label: 'Date' },
+  };
+  const ZONE_COLORS = {
+    signature: { border: 'border-purple-500', bg: 'bg-purple-100/30', text: 'text-purple-700', ring: 'ring-purple-400',
+                 tbBorder: 'border-purple-400', tbBg: 'bg-purple-50', tbText: 'text-purple-700' },
+    text:      { border: 'border-blue-500', bg: 'bg-blue-100/30', text: 'text-blue-700', ring: 'ring-blue-400',
+                 tbBorder: 'border-blue-400', tbBg: 'bg-blue-50', tbText: 'text-blue-700' },
+    date:      { border: 'border-green-500', bg: 'bg-green-100/30', text: 'text-green-700', ring: 'ring-green-400',
+                 tbBorder: 'border-green-400', tbBg: 'bg-green-50', tbText: 'text-green-700' },
+  };
+  const MIN_ZONE_PCT = { w: 5, h: 2 };
+
+  let zbOpen = false;
+  let zbItemId = null;
+  let zbPdfDoc = null;
+  let zbCurrentPage = 1;
+  let zbCanvasW = 0, zbCanvasH = 0;
+  let zbActiveType = 'signature';
+  let zbSelectedId = null;
+  let zbScale = 1.5;
+  const zbZones = {};  // id -> zone object
+
+  const ZONE_PLACEHOLDERS = {
+    signature: 'e.g. Client signature',
+    text: 'e.g. First name',
+    date: 'e.g. Date of birth',
+  };
+
+  // Drag/resize state
+  let zbDragging = null;   // { zoneId, offX, offY }
+  let zbResizing = null;   // { zoneId, handle, startX, startY, startZone: {x,y,w,h} }
+  let zbJustDragged = false; // prevents canvas click after drag
+
+  function setActiveType(type) {
+    zbActiveType = type;
+    for (const t of ['signature', 'text', 'date']) {
+      const btn = document.getElementById('tb-' + t);
+      const c = ZONE_COLORS[t];
+      if (t === type) {
+        btn.className = `w-full flex items-center gap-3 px-4 py-3 rounded-lg border-2 ${c.tbBorder} ${c.tbBg} text-left transition-all`;
+        btn.querySelector('span:last-child').className = `text-base font-semibold ${c.tbText}`;
       } else {
-        zbSelectZone(id);
+        btn.className = 'w-full flex items-center gap-3 px-4 py-3 rounded-lg border-2 border-gray-200 bg-white text-left transition-all hover:border-gray-300';
+        btn.querySelector('span:last-child').className = 'text-base font-semibold text-gray-700';
       }
     }
+  }
 
-    function zbUpdateLabel(id, value) {
-      const z = zbZones[id];
-      if (!z) return;
-      z.label = value.trim() || ZONE_DEFAULTS[z.zone_type].label;
-      z._dirty = true;
-      // Update div label
-      const div = document.getElementById('zd-' + id);
-      if (div) {
-        const p = div.querySelector('p');
-        if (p) p.textContent = z.label;
-      }
+  async function openZoneBuilder(itemId) {
+    zbItemId = itemId;
+    zbSelectedId = null;
+    zbActiveType = 'signature';
+    setActiveType('signature');
+
+    // Clear zones
+    for (const k of Object.keys(zbZones)) delete zbZones[k];
+
+    // Load existing zones from server
+    const res = await fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${itemId}/zones`);
+    const data = await res.json();
+    for (const z of data.zones) {
+      zbZones[z.id] = { ...z, _new: false, _dirty: false, _deleted: false };
     }
 
-    function zbDeleteZone(id) {
-      const z = zbZones[id];
-      if (!z) return;
-      z._deleted = true;
-      const div = document.getElementById('zd-' + id);
-      if (div) div.remove();
-      if (zbSelectedId === id) zbSelectedId = null;
+    // Load PDF
+    const url = `/portal/staff/templates/${TEMPLATE_ID}/items/${itemId}/pdf-bytes`;
+    const state = itemState[itemId];
+    document.getElementById('zb-title').textContent = 'Zone Builder — ' + (state ? state.title : '');
+
+    try {
+      zbPdfDoc = await pdfjsLib.getDocument(url).promise;
+      zbCurrentPage = 1;
+      zbOpen = true;
+      document.getElementById('zoneBuilderModal').classList.remove('hidden');
+      await zbRenderPage(zbCurrentPage);
       zbRenderSidebar();
+    } catch (err) {
+      alert('Failed to load PDF: ' + err.message);
+    }
+  }
+
+  function closeZoneBuilder() {
+    document.getElementById('zoneBuilderModal').classList.add('hidden');
+    zbOpen = false;
+    zbItemId = null;
+    zbPdfDoc = null;
+    zbSelectedId = null;
+    // Remove all zone divs
+    const container = document.getElementById('zb-pdf-container');
+    container.querySelectorAll('.zone-div').forEach(el => el.remove());
+  }
+
+  async function zbRenderPage(num) {
+    const page = await zbPdfDoc.getPage(num);
+    const viewport = page.getViewport({ scale: zbScale });
+    const canvas = document.getElementById('zb-canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    zbCanvasW = viewport.width;
+    zbCanvasH = viewport.height;
+    const ctx = canvas.getContext('2d');
+    await page.render({ canvasContext: ctx, viewport }).promise;
+
+    document.getElementById('zb-page-info').textContent = `Page ${num} of ${zbPdfDoc.numPages}`;
+    document.getElementById('zb-zoom-info').textContent = `${Math.round(zbScale * 100)}%`;
+    zbSelectedId = null;
+    zbRenderAllZones();
+  }
+
+  function zbZoom(delta) {
+    const newScale = Math.round((zbScale + delta) * 100) / 100;
+    if (newScale < 0.5 || newScale > 3.0) return;
+    zbScale = newScale;
+    zbRenderPage(zbCurrentPage);
+  }
+
+  function zbZoomReset() {
+    zbScale = 1.5;
+    zbRenderPage(zbCurrentPage);
+  }
+
+  function zbChangePage(delta) {
+    if (!zbPdfDoc) return;
+    const next = zbCurrentPage + delta;
+    if (next < 1 || next > zbPdfDoc.numPages) return;
+    zbCurrentPage = next;
+    zbRenderPage(zbCurrentPage);
+  }
+
+  // -----------------------------------------------------------------------
+  // Zone rendering
+  // -----------------------------------------------------------------------
+
+  function zbRenderAllZones() {
+    const container = document.getElementById('zb-pdf-container');
+    container.querySelectorAll('.zone-div').forEach(el => el.remove());
+    for (const id of Object.keys(zbZones)) {
+      const z = zbZones[id];
+      if (z._deleted) continue;
+      if (z.page !== zbCurrentPage - 1) continue;
+      zbCreateZoneDiv(id);
+    }
+  }
+
+  function zbCreateZoneDiv(id) {
+    const z = zbZones[id];
+    const c = ZONE_COLORS[z.zone_type] || ZONE_COLORS.text;
+    const container = document.getElementById('zb-pdf-container');
+
+    const div = document.createElement('div');
+    div.id = 'zd-' + id;
+    div.className = `zone-div absolute border-2 border-dashed ${c.border} ${c.bg} cursor-move flex items-center justify-center`;
+    div.style.left = pctToPx(z.x, zbCanvasW) + 'px';
+    div.style.top = pctToPx(z.y, zbCanvasH) + 'px';
+    div.style.width = pctToPx(z.w, zbCanvasW) + 'px';
+    div.style.height = pctToPx(z.h, zbCanvasH) + 'px';
+
+    if (id === zbSelectedId) {
+      div.classList.add('ring-2', 'ring-offset-1', c.ring);
     }
 
-    // -----------------------------------------------------------------------
-    // Canvas click — place new zone
-    // -----------------------------------------------------------------------
+    // Label
+    const label = document.createElement('p');
+    label.className = `${c.text} text-sm font-medium text-center pointer-events-none select-none truncate px-1`;
+    label.textContent = z.label;
+    div.appendChild(label);
 
-    document.getElementById('zb-canvas').addEventListener('click', function(e) {
-      if (!zbOpen) return;
-      if (zbDragging || zbResizing || zbJustDragged) return;
+    // Delete button (top-right, outside the box)
+    const delBtn = document.createElement('button');
+    delBtn.className = 'zone-delete-btn absolute -top-3 -right-3 w-5 h-5 bg-red-500 text-white rounded-full text-xs font-bold flex items-center justify-center hover:bg-red-600 cursor-pointer';
+    delBtn.textContent = '\u00d7';
+    delBtn.style.lineHeight = '1';
+    if (id !== zbSelectedId) delBtn.style.display = 'none';
+    delBtn.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      zbDeleteZone(id);
+    });
+    div.appendChild(delBtn);
 
-      const rect = this.getBoundingClientRect();
-      const scaleX = zbCanvasW / rect.width;
-      const scaleY = zbCanvasH / rect.height;
-      const xPct = ((e.clientX - rect.left) * scaleX / zbCanvasW) * 100;
-      const yPct = ((e.clientY - rect.top) * scaleY / zbCanvasH) * 100;
+    // Resize handles (4 corners)
+    for (const handle of ['nw', 'ne', 'sw', 'se']) {
+      const h = document.createElement('div');
+      h.className = `absolute w-3 h-3 bg-white border-2 ${c.border} rounded-sm cursor-${handle}-resize`;
+      h.dataset.handle = handle;
+      h.dataset.zoneId = id;
+      if (handle[0] === 'n') h.style.top = '-5px'; else h.style.bottom = '-5px';
+      if (handle[1] === 'w') h.style.left = '-5px'; else h.style.right = '-5px';
+      // Only show handles on selected zone
+      if (id !== zbSelectedId) h.style.display = 'none';
+      h.addEventListener('mousedown', onResizeMousedown);
+      div.appendChild(h);
+    }
 
-      const defaults = ZONE_DEFAULTS[zbActiveType];
-      let w = defaults.w, h = defaults.h;
-      let x = xPct, y = yPct;
+    div.addEventListener('mousedown', onZoneMousedown);
+    container.appendChild(div);
+  }
+
+  function zbUpdateZoneDiv(id) {
+    const z = zbZones[id];
+    const div = document.getElementById('zd-' + id);
+    if (!div) return;
+    div.style.left = pctToPx(z.x, zbCanvasW) + 'px';
+    div.style.top = pctToPx(z.y, zbCanvasH) + 'px';
+    div.style.width = pctToPx(z.w, zbCanvasW) + 'px';
+    div.style.height = pctToPx(z.h, zbCanvasH) + 'px';
+  }
+
+  function zbSelectZone(id) {
+    const prevId = zbSelectedId;
+    zbSelectedId = id;
+    // Toggle selection CSS without destroying/recreating divs
+    if (prevId && prevId !== id) zbToggleZoneSelection(prevId, false);
+    if (id) zbToggleZoneSelection(id, true);
+    zbRenderSidebar();
+  }
+
+  function zbToggleZoneSelection(id, selected) {
+    const div = document.getElementById('zd-' + id);
+    if (!div) return;
+    const z = zbZones[id];
+    if (!z) return;
+    const c = ZONE_COLORS[z.zone_type] || ZONE_COLORS.text;
+    // Ring
+    if (selected) {
+      div.classList.add('ring-2', 'ring-offset-1', c.ring);
+    } else {
+      div.classList.remove('ring-2', 'ring-offset-1');
+      for (const col of Object.values(ZONE_COLORS)) div.classList.remove(col.ring);
+    }
+    // Resize handles + delete button visibility
+    div.querySelectorAll('[data-handle]').forEach(h => h.style.display = selected ? '' : 'none');
+    const delBtn = div.querySelector('.zone-delete-btn');
+    if (delBtn) delBtn.style.display = selected ? '' : 'none';
+  }
+
+  // -----------------------------------------------------------------------
+  // Sidebar
+  // -----------------------------------------------------------------------
+
+  function zbRenderSidebar() {
+    const sidebar = document.getElementById('zb-sidebar');
+    const allZones = Object.values(zbZones).filter(z => !z._deleted);
+
+    // Update zone count
+    const countEl = document.getElementById('zb-zone-count');
+    if (countEl) countEl.textContent = `${allZones.length} zone${allZones.length !== 1 ? 's' : ''}`;
+
+    if (allZones.length === 0) {
+      sidebar.innerHTML = '<p class="px-4 py-8 text-sm text-gray-400 text-center" id="zb-sidebar-empty">Click on the document to place your first zone</p>';
+      return;
+    }
+
+    allZones.sort((a, b) => a.sort_order - b.sort_order);
+    let html = '';
+    for (const z of allZones) {
+      const c = ZONE_COLORS[z.zone_type] || ZONE_COLORS.text;
+      const selected = z.id === zbSelectedId;
+      const bgClass = selected ? 'bg-blue-50/50 border-l-2 border-l-blue-400' : 'border-l-2 border-l-transparent';
+      const placeholder = ZONE_PLACEHOLDERS[z.zone_type] || 'Label';
+      html += `
+        <div class="px-4 py-3 ${bgClass} cursor-pointer hover:bg-gray-50 border-b border-gray-100 group" onclick="zbSelectZoneAndNav('${z.id}')">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${c.bg} ${c.text} border ${c.border}">${z.zone_type}</span>
+            <span class="text-xs text-gray-400 font-medium">Page ${z.page + 1}</span>
+            <button onclick="event.stopPropagation(); zbDeleteZone('${z.id}')" class="ml-auto text-sm text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" title="Remove zone">&times;</button>
+          </div>
+          <input type="text" value="${escHtml(z.label)}" data-zone-id="${z.id}"
+            placeholder="${placeholder}"
+            class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-300 bg-white"
+            onclick="event.stopPropagation()"
+            onblur="zbUpdateLabel('${z.id}', this.value)" />
+        </div>`;
+    }
+    sidebar.innerHTML = html;
+  }
+
+  function zbSelectZoneAndNav(id) {
+    const z = zbZones[id];
+    if (!z) return;
+    if (z.page !== zbCurrentPage - 1) {
+      zbCurrentPage = z.page + 1;
+      zbRenderPage(zbCurrentPage).then(() => {
+        zbSelectedId = id;
+        zbRenderAllZones();
+        zbRenderSidebar();
+      });
+    } else {
+      zbSelectZone(id);
+    }
+  }
+
+  function zbUpdateLabel(id, value) {
+    const z = zbZones[id];
+    if (!z) return;
+    z.label = value.trim() || ZONE_DEFAULTS[z.zone_type].label;
+    z._dirty = true;
+    // Update div label
+    const div = document.getElementById('zd-' + id);
+    if (div) {
+      const p = div.querySelector('p');
+      if (p) p.textContent = z.label;
+    }
+  }
+
+  function zbDeleteZone(id) {
+    const z = zbZones[id];
+    if (!z) return;
+    z._deleted = true;
+    const div = document.getElementById('zd-' + id);
+    if (div) div.remove();
+    if (zbSelectedId === id) zbSelectedId = null;
+    zbRenderSidebar();
+  }
+
+  // -----------------------------------------------------------------------
+  // Canvas click — place new zone
+  // -----------------------------------------------------------------------
+
+  document.getElementById('zb-canvas').addEventListener('click', function(e) {
+    if (!zbOpen) return;
+    if (zbDragging || zbResizing || zbJustDragged) return;
+
+    const rect = this.getBoundingClientRect();
+    const scaleX = zbCanvasW / rect.width;
+    const scaleY = zbCanvasH / rect.height;
+    const xPct = ((e.clientX - rect.left) * scaleX / zbCanvasW) * 100;
+    const yPct = ((e.clientY - rect.top) * scaleY / zbCanvasH) * 100;
+
+    const defaults = ZONE_DEFAULTS[zbActiveType];
+    let w = defaults.w, h = defaults.h;
+    let x = xPct, y = yPct;
+
+    // Clamp to canvas
+    if (x + w > 100) w = 100 - x;
+    if (y + h > 100) h = 100 - y;
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+
+    const id = 'new-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    const maxOrder = Math.max(-1, ...Object.values(zbZones).filter(z => !z._deleted).map(z => z.sort_order));
+
+    zbZones[id] = {
+      id, zone_type: zbActiveType, label: defaults.label,
+      page: zbCurrentPage - 1, x: round2(x), y: round2(y), w: round2(w), h: round2(h),
+      sort_order: maxOrder + 1, required: true,
+      _new: true, _dirty: false, _deleted: false,
+    };
+
+    zbCreateZoneDiv(id);
+    // Select without full re-render (div was just created)
+    const prevId = zbSelectedId;
+    if (prevId) zbToggleZoneSelection(prevId, false);
+    zbSelectedId = id;
+    zbToggleZoneSelection(id, true);
+    zbRenderSidebar();
+  });
+
+  // -----------------------------------------------------------------------
+  // Zone drag
+  // -----------------------------------------------------------------------
+
+  function onZoneMousedown(e) {
+    // Don't start drag if clicking a resize handle or delete button
+    if (e.target.dataset.handle || e.target.classList.contains('zone-delete-btn')) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const div = e.currentTarget;
+    const id = div.id.replace('zd-', '');
+
+    // Capture rect BEFORE selection toggle (which no longer destroys DOM, but be safe)
+    const container = document.getElementById('zb-pdf-container');
+    const containerRect = container.getBoundingClientRect();
+    const scaleX = zbCanvasW / containerRect.width;
+    const scaleY = zbCanvasH / containerRect.height;
+    const zoneRect = div.getBoundingClientRect();
+
+    zbSelectZone(id);
+
+    zbDragging = {
+      zoneId: id,
+      offX: (e.clientX - zoneRect.left) * scaleX,
+      offY: (e.clientY - zoneRect.top) * scaleY,
+    };
+  }
+
+  // -----------------------------------------------------------------------
+  // Resize
+  // -----------------------------------------------------------------------
+
+  function onResizeMousedown(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const handle = e.target.dataset.handle;
+    const id = e.target.dataset.zoneId;
+    const z = zbZones[id];
+    if (!z) return;
+
+    zbResizing = {
+      zoneId: id,
+      handle,
+      startX: e.clientX,
+      startY: e.clientY,
+      startZone: { x: z.x, y: z.y, w: z.w, h: z.h },
+    };
+  }
+
+  // -----------------------------------------------------------------------
+  // Global mouse handlers
+  // -----------------------------------------------------------------------
+
+  document.addEventListener('mousemove', function(e) {
+    if (!zbOpen) return;
+
+    const container = document.getElementById('zb-pdf-container');
+    const containerRect = container.getBoundingClientRect();
+    const scaleX = zbCanvasW / containerRect.width;
+    const scaleY = zbCanvasH / containerRect.height;
+
+    if (zbDragging) {
+      const z = zbZones[zbDragging.zoneId];
+      if (!z) return;
+      let newXpx = (e.clientX - containerRect.left) * scaleX - zbDragging.offX;
+      let newYpx = (e.clientY - containerRect.top) * scaleY - zbDragging.offY;
+      const wPx = pctToPx(z.w, zbCanvasW);
+      const hPx = pctToPx(z.h, zbCanvasH);
+      newXpx = Math.max(0, Math.min(zbCanvasW - wPx, newXpx));
+      newYpx = Math.max(0, Math.min(zbCanvasH - hPx, newYpx));
+      z.x = round2(newXpx / zbCanvasW * 100);
+      z.y = round2(newYpx / zbCanvasH * 100);
+      z._dirty = true;
+      zbUpdateZoneDiv(zbDragging.zoneId);
+    }
+
+    if (zbResizing) {
+      const z = zbZones[zbResizing.zoneId];
+      if (!z) return;
+      const s = zbResizing.startZone;
+      const dxPct = (e.clientX - zbResizing.startX) * scaleX / zbCanvasW * 100;
+      const dyPct = (e.clientY - zbResizing.startY) * scaleY / zbCanvasH * 100;
+      const handle = zbResizing.handle;
+
+      let nx = s.x, ny = s.y, nw = s.w, nh = s.h;
+
+      if (handle === 'se') {
+        nw = s.w + dxPct;
+        nh = s.h + dyPct;
+      } else if (handle === 'sw') {
+        nx = s.x + dxPct;
+        nw = s.w - dxPct;
+        nh = s.h + dyPct;
+      } else if (handle === 'ne') {
+        ny = s.y + dyPct;
+        nw = s.w + dxPct;
+        nh = s.h - dyPct;
+      } else if (handle === 'nw') {
+        nx = s.x + dxPct;
+        ny = s.y + dyPct;
+        nw = s.w - dxPct;
+        nh = s.h - dyPct;
+      }
+
+      // Enforce minimum size
+      if (nw < MIN_ZONE_PCT.w) { nw = MIN_ZONE_PCT.w; if (handle === 'nw' || handle === 'sw') nx = s.x + s.w - MIN_ZONE_PCT.w; }
+      if (nh < MIN_ZONE_PCT.h) { nh = MIN_ZONE_PCT.h; if (handle === 'nw' || handle === 'ne') ny = s.y + s.h - MIN_ZONE_PCT.h; }
 
       // Clamp to canvas
-      if (x + w > 100) w = 100 - x;
-      if (y + h > 100) h = 100 - y;
-      if (x < 0) x = 0;
-      if (y < 0) y = 0;
+      if (nx < 0) { nw += nx; nx = 0; }
+      if (ny < 0) { nh += ny; ny = 0; }
+      if (nx + nw > 100) nw = 100 - nx;
+      if (ny + nh > 100) nh = 100 - ny;
 
-      const id = 'new-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-      const maxOrder = Math.max(-1, ...Object.values(zbZones).filter(z => !z._deleted).map(z => z.sort_order));
+      z.x = round2(nx);
+      z.y = round2(ny);
+      z.w = round2(nw);
+      z.h = round2(nh);
+      z._dirty = true;
+      zbUpdateZoneDiv(zbResizing.zoneId);
+    }
+  });
 
-      zbZones[id] = {
-        id, zone_type: zbActiveType, label: defaults.label,
-        page: zbCurrentPage - 1, x: round2(x), y: round2(y), w: round2(w), h: round2(h),
-        sort_order: maxOrder + 1, required: true,
-        _new: true, _dirty: false, _deleted: false,
-      };
+  document.addEventListener('mouseup', function() {
+    if (zbDragging || zbResizing) {
+      // Set a brief flag so the canvas click handler doesn't fire after drag/resize
+      const wasDragging = !!zbDragging;
+      const wasResizing = !!zbResizing;
+      zbDragging = null;
+      zbResizing = null;
+      if (wasDragging || wasResizing) {
+        zbJustDragged = true;
+        setTimeout(() => { zbJustDragged = false; }, 50);
+      }
+    }
+  });
 
-      zbCreateZoneDiv(id);
-      // Select without full re-render (div was just created)
-      const prevId = zbSelectedId;
-      if (prevId) zbToggleZoneSelection(prevId, false);
-      zbSelectedId = id;
-      zbToggleZoneSelection(id, true);
-      zbRenderSidebar();
-    });
+  // -----------------------------------------------------------------------
+  // Arrow keys
+  // -----------------------------------------------------------------------
 
-    // -----------------------------------------------------------------------
-    // Zone drag
-    // -----------------------------------------------------------------------
+  document.addEventListener('keydown', function(e) {
+    if (!zbOpen || !zbSelectedId) return;
+    const z = zbZones[zbSelectedId];
+    if (!z || z._deleted) return;
 
-    function onZoneMousedown(e) {
-      // Don't start drag if clicking a resize handle or delete button
-      if (e.target.dataset.handle || e.target.classList.contains('zone-delete-btn')) return;
+    const step = e.shiftKey ? 5 : 1;
+    let handled = false;
+
+    if (e.key === 'ArrowLeft')  { z.x = Math.max(0, z.x - step); handled = true; }
+    if (e.key === 'ArrowRight') { z.x = Math.min(100 - z.w, z.x + step); handled = true; }
+    if (e.key === 'ArrowUp')    { z.y = Math.max(0, z.y - step); handled = true; }
+    if (e.key === 'ArrowDown')  { z.y = Math.min(100 - z.h, z.y + step); handled = true; }
+
+    if (handled) {
       e.preventDefault();
-      e.stopPropagation();
-
-      const div = e.currentTarget;
-      const id = div.id.replace('zd-', '');
-
-      // Capture rect BEFORE selection toggle (which no longer destroys DOM, but be safe)
-      const container = document.getElementById('zb-pdf-container');
-      const containerRect = container.getBoundingClientRect();
-      const scaleX = zbCanvasW / containerRect.width;
-      const scaleY = zbCanvasH / containerRect.height;
-      const zoneRect = div.getBoundingClientRect();
-
-      zbSelectZone(id);
-
-      zbDragging = {
-        zoneId: id,
-        offX: (e.clientX - zoneRect.left) * scaleX,
-        offY: (e.clientY - zoneRect.top) * scaleY,
-      };
+      z.x = round2(z.x);
+      z.y = round2(z.y);
+      z._dirty = true;
+      zbUpdateZoneDiv(zbSelectedId);
+      return;
     }
 
-    // -----------------------------------------------------------------------
-    // Resize
-    // -----------------------------------------------------------------------
-
-    function onResizeMousedown(e) {
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      // Don't delete if focus is on an input
+      if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
       e.preventDefault();
-      e.stopPropagation();
-      const handle = e.target.dataset.handle;
-      const id = e.target.dataset.zoneId;
-      const z = zbZones[id];
-      if (!z) return;
+      zbDeleteZone(zbSelectedId);
+    }
+  });
 
-      zbResizing = {
-        zoneId: id,
-        handle,
-        startX: e.clientX,
-        startY: e.clientY,
-        startZone: { x: z.x, y: z.y, w: z.w, h: z.h },
-      };
+  // -----------------------------------------------------------------------
+  // Save all zones
+  // -----------------------------------------------------------------------
+
+  async function saveAllZones() {
+    const saves = [];
+
+    for (const [id, z] of Object.entries(zbZones)) {
+      if (z._deleted && !z._new) {
+        saves.push(fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${zbItemId}/zones/${id}`, { method: 'DELETE' }));
+      } else if (z._deleted && z._new) {
+        // Never persisted, skip
+      } else if (z._new) {
+        saves.push(
+          fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${zbItemId}/zones`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              zone_type: z.zone_type, label: z.label, page: z.page,
+              x: z.x, y: z.y, w: z.w, h: z.h, required: z.required,
+            }),
+          })
+        );
+      } else if (z._dirty) {
+        saves.push(
+          fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${zbItemId}/zones/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              zone_type: z.zone_type, label: z.label, page: z.page,
+              x: z.x, y: z.y, w: z.w, h: z.h, required: z.required,
+            }),
+          })
+        );
+      }
     }
 
-    // -----------------------------------------------------------------------
-    // Global mouse handlers
-    // -----------------------------------------------------------------------
+    await Promise.all(saves);
 
-    document.addEventListener('mousemove', function(e) {
-      if (!zbOpen) return;
+    // Update zone count badge in item row
+    const liveZones = Object.values(zbZones).filter(z => !z._deleted);
+    const count = liveZones.length;
+    if (itemState[zbItemId]) itemState[zbItemId].zone_count = count;
+    const btn = document.getElementById('zone-btn-' + zbItemId);
+    if (btn) btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg> Zones (${count})`;
 
-      const container = document.getElementById('zb-pdf-container');
-      const containerRect = container.getBoundingClientRect();
-      const scaleX = zbCanvasW / containerRect.width;
-      const scaleY = zbCanvasH / containerRect.height;
-
-      if (zbDragging) {
-        const z = zbZones[zbDragging.zoneId];
-        if (!z) return;
-        let newXpx = (e.clientX - containerRect.left) * scaleX - zbDragging.offX;
-        let newYpx = (e.clientY - containerRect.top) * scaleY - zbDragging.offY;
-        const wPx = pctToPx(z.w, zbCanvasW);
-        const hPx = pctToPx(z.h, zbCanvasH);
-        newXpx = Math.max(0, Math.min(zbCanvasW - wPx, newXpx));
-        newYpx = Math.max(0, Math.min(zbCanvasH - hPx, newYpx));
-        z.x = round2(newXpx / zbCanvasW * 100);
-        z.y = round2(newYpx / zbCanvasH * 100);
-        z._dirty = true;
-        zbUpdateZoneDiv(zbDragging.zoneId);
+    // Sync first signature zone to sig_* columns for client portal backward compat
+    const firstSig = liveZones.find(z => z.zone_type === 'signature');
+    const state = itemState[zbItemId];
+    if (state) {
+      if (firstSig) {
+        state.sig_page = firstSig.page;
+        state.sig_x = round2(firstSig.x);
+        state.sig_y = round2(firstSig.y);
+        state.sig_w = round2(firstSig.w);
+        state.sig_h = round2(firstSig.h);
+      } else {
+        state.sig_page = null;
+        state.sig_x = null;
+        state.sig_y = null;
+        state.sig_w = null;
+        state.sig_h = null;
       }
-
-      if (zbResizing) {
-        const z = zbZones[zbResizing.zoneId];
-        if (!z) return;
-        const s = zbResizing.startZone;
-        const dxPct = (e.clientX - zbResizing.startX) * scaleX / zbCanvasW * 100;
-        const dyPct = (e.clientY - zbResizing.startY) * scaleY / zbCanvasH * 100;
-        const handle = zbResizing.handle;
-
-        let nx = s.x, ny = s.y, nw = s.w, nh = s.h;
-
-        if (handle === 'se') {
-          nw = s.w + dxPct;
-          nh = s.h + dyPct;
-        } else if (handle === 'sw') {
-          nx = s.x + dxPct;
-          nw = s.w - dxPct;
-          nh = s.h + dyPct;
-        } else if (handle === 'ne') {
-          ny = s.y + dyPct;
-          nw = s.w + dxPct;
-          nh = s.h - dyPct;
-        } else if (handle === 'nw') {
-          nx = s.x + dxPct;
-          ny = s.y + dyPct;
-          nw = s.w - dxPct;
-          nh = s.h - dyPct;
-        }
-
-        // Enforce minimum size
-        if (nw < MIN_ZONE_PCT.w) { nw = MIN_ZONE_PCT.w; if (handle === 'nw' || handle === 'sw') nx = s.x + s.w - MIN_ZONE_PCT.w; }
-        if (nh < MIN_ZONE_PCT.h) { nh = MIN_ZONE_PCT.h; if (handle === 'nw' || handle === 'ne') ny = s.y + s.h - MIN_ZONE_PCT.h; }
-
-        // Clamp to canvas
-        if (nx < 0) { nw += nx; nx = 0; }
-        if (ny < 0) { nh += ny; ny = 0; }
-        if (nx + nw > 100) nw = 100 - nx;
-        if (ny + nh > 100) nh = 100 - ny;
-
-        z.x = round2(nx);
-        z.y = round2(ny);
-        z.w = round2(nw);
-        z.h = round2(nh);
-        z._dirty = true;
-        zbUpdateZoneDiv(zbResizing.zoneId);
-      }
-    });
-
-    document.addEventListener('mouseup', function() {
-      if (zbDragging || zbResizing) {
-        // Set a brief flag so the canvas click handler doesn't fire after drag/resize
-        const wasDragging = !!zbDragging;
-        const wasResizing = !!zbResizing;
-        zbDragging = null;
-        zbResizing = null;
-        if (wasDragging || wasResizing) {
-          zbJustDragged = true;
-          setTimeout(() => { zbJustDragged = false; }, 50);
-        }
-      }
-    });
-
-    // -----------------------------------------------------------------------
-    // Arrow keys
-    // -----------------------------------------------------------------------
-
-    document.addEventListener('keydown', function(e) {
-      if (!zbOpen || !zbSelectedId) return;
-      const z = zbZones[zbSelectedId];
-      if (!z || z._deleted) return;
-
-      const step = e.shiftKey ? 5 : 1;
-      let handled = false;
-
-      if (e.key === 'ArrowLeft')  { z.x = Math.max(0, z.x - step); handled = true; }
-      if (e.key === 'ArrowRight') { z.x = Math.min(100 - z.w, z.x + step); handled = true; }
-      if (e.key === 'ArrowUp')    { z.y = Math.max(0, z.y - step); handled = true; }
-      if (e.key === 'ArrowDown')  { z.y = Math.min(100 - z.h, z.y + step); handled = true; }
-
-      if (handled) {
-        e.preventDefault();
-        z.x = round2(z.x);
-        z.y = round2(z.y);
-        z._dirty = true;
-        zbUpdateZoneDiv(zbSelectedId);
-        return;
-      }
-
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        // Don't delete if focus is on an input
-        if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
-        e.preventDefault();
-        zbDeleteZone(zbSelectedId);
-      }
-    });
-
-    // -----------------------------------------------------------------------
-    // Save all zones
-    // -----------------------------------------------------------------------
-
-    async function saveAllZones() {
-      const saves = [];
-
-      for (const [id, z] of Object.entries(zbZones)) {
-        if (z._deleted && !z._new) {
-          saves.push(fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${zbItemId}/zones/${id}`, { method: 'DELETE' }));
-        } else if (z._deleted && z._new) {
-          // Never persisted, skip
-        } else if (z._new) {
-          saves.push(
-            fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${zbItemId}/zones`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                zone_type: z.zone_type, label: z.label, page: z.page,
-                x: z.x, y: z.y, w: z.w, h: z.h, required: z.required,
-              }),
-            })
-          );
-        } else if (z._dirty) {
-          saves.push(
-            fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${zbItemId}/zones/${id}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                zone_type: z.zone_type, label: z.label, page: z.page,
-                x: z.x, y: z.y, w: z.w, h: z.h, required: z.required,
-              }),
-            })
-          );
-        }
-      }
-
-      await Promise.all(saves);
-
-      // Update zone count badge in item row
-      const liveZones = Object.values(zbZones).filter(z => !z._deleted);
-      const count = liveZones.length;
-      if (itemState[zbItemId]) itemState[zbItemId].zone_count = count;
-      const btn = document.getElementById('zone-btn-' + zbItemId);
-      if (btn) btn.textContent = `Edit zones (${count} defined)`;
-
-      // Sync first signature zone to sig_* columns for client portal backward compat
-      const firstSig = liveZones.find(z => z.zone_type === 'signature');
-      const state = itemState[zbItemId];
-      if (state) {
-        if (firstSig) {
-          state.sig_page = firstSig.page;
-          state.sig_x = round2(firstSig.x);
-          state.sig_y = round2(firstSig.y);
-          state.sig_w = round2(firstSig.w);
-          state.sig_h = round2(firstSig.h);
-        } else {
-          state.sig_page = null;
-          state.sig_x = null;
-          state.sig_y = null;
-          state.sig_w = null;
-          state.sig_h = null;
-        }
-        // Persist sig_* to template item
-        await fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${zbItemId}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(state),
-        });
-      }
-
-      closeZoneBuilder();
+      // Persist sig_* to template item
+      await fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${zbItemId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state),
+      });
     }
 
-    // -----------------------------------------------------------------------
-    // Helpers
-    // -----------------------------------------------------------------------
+    closeZoneBuilder();
+  }
 
-    function pctToPx(pct, dim) { return pct / 100 * dim; }
-    function round2(n) { return Math.round(n * 100) / 100; }
-  </script>
-</body>
-</html>
+  // -----------------------------------------------------------------------
+  // Helpers
+  // -----------------------------------------------------------------------
+
+  function pctToPx(pct, dim) { return pct / 100 * dim; }
+  function round2(n) { return Math.round(n * 100) / 100; }
+
+  // Re-init Lucide icons for type cards
+  lucide.createIcons();
+</script>
+{% endblock %}

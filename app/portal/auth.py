@@ -70,13 +70,13 @@ async def require_staff(
         raise NotAuthenticated()
 
     row = await conn.fetchrow(
-        "SELECT role FROM portal.staff_users WHERE id = $1::uuid AND is_active = true",
+        "SELECT role, full_name, email FROM portal.staff_users WHERE id = $1::uuid AND is_active = true",
         staff_id,
     )
     if not row:
         raise NotAuthenticated()
 
-    return {"staff_id": staff_id, "tenant_id": tenant_id, "role": row["role"]}
+    return {"staff_id": staff_id, "tenant_id": tenant_id, "role": row["role"], "full_name": row["full_name"], "email": row["email"]}
 
 
 async def require_admin(staff: dict = Depends(require_staff)) -> dict:
