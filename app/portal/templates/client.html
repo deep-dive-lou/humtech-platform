@@ -1038,33 +1038,6 @@
       const displayW = canvasRect.width;
       const displayH = canvasRect.height;
 
-      // DEBUG: red border on canvas, add coordinate labels to zones
-      pdfCanvas.style.outline = '2px solid red';
-      canvasWrap.style.outline = '2px dashed blue';
-
-      // DEBUG: Show dimensions on page (temporary — remove after fixing)
-      let dbg = document.getElementById('zone-debug');
-      if (!dbg) {
-        dbg = document.createElement('div');
-        dbg.id = 'zone-debug';
-        dbg.style.cssText = 'position:fixed;bottom:60px;left:8px;right:8px;background:rgba(0,0,0,0.85);color:#0f0;font:11px monospace;padding:8px;border-radius:6px;z-index:99999;white-space:pre-wrap;max-height:40vh;overflow:auto;';
-        document.body.appendChild(dbg);
-      }
-      const z0 = pageZones[0] || {};
-      // After zones are placed, measure their actual screen positions
-      const canvasScreenTop = pdfCanvas.getBoundingClientRect().top;
-      const wrapScreenTop = canvasWrap.getBoundingClientRect().top;
-      dbg.textContent = [
-        `dpr=${dpr} innerW=${window.innerWidth}`,
-        `cssW=${cssW} cssH=${cssH}`,
-        `canvasRect=${Math.round(canvasRect.width)}x${Math.round(canvasRect.height)}`,
-        `canvas.screenTop=${Math.round(canvasScreenTop)} wrap.screenTop=${Math.round(wrapScreenTop)}`,
-        `zone0: x=${z0.x}% y=${z0.y}% → left=${Math.round(z0.x/100*displayW)}px top=${Math.round(z0.y/100*displayH)}px`,
-        `zone0 EXPECTED: ${z0.x}% from left, ${z0.y}% from top of PDF`,
-        `canvasWrap children: ${canvasWrap.children.length}`,
-        `canvasWrap.scrollTop=${canvasWrap.scrollTop} container.scrollTop=${containerEl?.scrollTop}`,
-      ].join('\n');
-
       for (const z of pageZones) {
         const oX = z.x / 100 * displayW;
         const oY = z.y / 100 * displayH;
@@ -1076,26 +1049,21 @@
         overlay.dataset.zoneId = z.id;
         overlay.dataset.zoneType = z.zone_type;
         overlay.style.left = oX + 'px';
-        // DEBUG: bright background + coordinate label
-        overlay.style.background = 'rgba(255,0,0,0.3)';
-        const coordLabel = document.createElement('div');
-        coordLabel.style.cssText = 'position:absolute;top:-14px;left:0;font:bold 9px monospace;color:red;white-space:nowrap;';
-        coordLabel.textContent = `${z.zone_type}@${Math.round(oX)},${Math.round(oY)}`;
-        overlay.appendChild(coordLabel);
         overlay.style.top = oY + 'px';
         overlay.style.width = oW + 'px';
         overlay.style.height = oH + 'px';
 
         if (z.zone_type === 'signature') {
           overlay.className += ' border-2 border-dashed border-purple-400 bg-purple-50 bg-opacity-30';
-          // Block parent scroll container from capturing touch events
+          overlay.style.overflow = 'hidden';
+          // Block parent scroll container from capturing touch events on real mobile
           overlay.style.touchAction = 'none';
+          overlay.addEventListener('touchstart', (e) => { e.preventDefault(); }, { passive: false });
+          overlay.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
           const canvas = document.createElement('canvas');
-          canvas.style.width = '100%';
-          canvas.style.height = '100%';
+          canvas.style.cssText = 'width:100%;height:100%;display:block;touch-action:none;';
           canvas.width = Math.round(oW * dpr);
           canvas.height = Math.round(oH * dpr);
-          canvas.style.touchAction = 'none';
           canvas.className = 'cursor-crosshair';
           overlay.appendChild(canvas);
 
@@ -1134,23 +1102,29 @@
           });
         } else if (z.zone_type === 'text') {
           overlay.className += ' border-2 border-blue-300 bg-blue-50 bg-opacity-50 zone-saved';
+          overlay.style.overflow = 'hidden';
           const input = document.createElement('input');
           input.type = 'text';
           input.placeholder = z.label;
           input.value = z.value || '';
           input.dataset.zoneId = z.id;
-          input.className = 'w-full h-full bg-transparent text-xs sm:text-sm px-1 outline-none zone-input';
+          // Force input to fit within zone on mobile (no native padding/margin)
+          input.style.cssText = 'width:100%;height:100%;background:transparent;border:none;outline:none;padding:0 2px;margin:0;font-size:inherit;line-height:1;box-sizing:border-box;-webkit-appearance:none;';
+          input.className = 'zone-input';
           input.addEventListener('input', () => checkZoneCompletion(itemId));
           input.addEventListener('blur', () => autoSaveZone(itemId, z.id, input.value, overlay));
           overlay.appendChild(input);
           canvasWrap.appendChild(overlay);
         } else if (z.zone_type === 'date') {
           overlay.className += ' border-2 border-green-300 bg-green-50 bg-opacity-50 zone-saved';
+          overlay.style.overflow = 'hidden';
           const input = document.createElement('input');
           input.type = 'date';
           input.value = z.value || '';
           input.dataset.zoneId = z.id;
-          input.className = 'w-full h-full bg-transparent text-xs sm:text-sm px-1 outline-none zone-input';
+          // Force input to fit within zone on mobile
+          input.style.cssText = 'width:100%;height:100%;background:transparent;border:none;outline:none;padding:0 2px;margin:0;font-size:inherit;line-height:1;box-sizing:border-box;-webkit-appearance:none;';
+          input.className = 'zone-input';
           input.addEventListener('change', () => {
             checkZoneCompletion(itemId);
             autoSaveZone(itemId, z.id, input.value, overlay);
