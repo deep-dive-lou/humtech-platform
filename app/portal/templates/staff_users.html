@@ -8,52 +8,63 @@
 
   <div class="flex items-center justify-between mb-6">
     <h1 class="text-lg font-semibold">Staff Users</h1>
-    <a href="/portal/staff/users/new" class="text-sm font-medium bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors">
+    <a href="/portal/staff/users/new" class="text-base font-medium btn-brand px-5 py-2.5 rounded-xl transition-colors">
       Add User
     </a>
   </div>
 
+  {% if not users %}
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
+    <i data-lucide="users" class="w-12 h-12 text-gray-200 mx-auto mb-3"></i>
+    <p class="text-lg font-medium text-gray-900">No staff users yet</p>
+    <p class="text-base text-gray-400 mt-1">Add your first team member to get started.</p>
+    <a href="/portal/staff/users/new" class="mt-4 inline-block text-base font-medium btn-brand px-5 py-2.5 rounded-xl transition-colors">
+      Add first user
+    </a>
+  </div>
+  {% else %}
   <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-    <table class="w-full text-sm">
+    <table class="w-full text-base">
       <thead>
         <tr class="border-b border-gray-100 bg-gray-50 text-left">
-          <th class="px-5 py-3 font-medium text-gray-500">Name</th>
-          <th class="px-5 py-3 font-medium text-gray-500">Email</th>
-          <th class="px-5 py-3 font-medium text-gray-500">Role</th>
-          <th class="px-5 py-3 font-medium text-gray-500">Status</th>
-          <th class="px-5 py-3 font-medium text-gray-500">Last login</th>
-          <th class="px-5 py-3"></th>
+          <th class="px-5 py-3.5 font-medium text-sm text-gray-500">Name</th>
+          <th class="px-5 py-3.5 font-medium text-sm text-gray-500">Email</th>
+          <th class="px-5 py-3.5 font-medium text-sm text-gray-500">Role</th>
+          <th class="px-5 py-3.5 font-medium text-sm text-gray-500">Status</th>
+          <th class="px-5 py-3.5 font-medium text-sm text-gray-500">Last login</th>
+          <th class="px-5 py-3.5"></th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
         {% for u in users %}
-        <tr class="hover:bg-gray-50 transition-colors">
-          <td class="px-5 py-3 font-medium">{{ u.full_name or "—" }}</td>
-          <td class="px-5 py-3 text-gray-500">{{ u.email }}</td>
-          <td class="px-5 py-3">
+        <tr class="hover:bg-gray-50 transition-colors cursor-pointer" onclick="window.location='/portal/staff/users/{{ u.id }}/edit'">
+          <td class="px-5 py-4 font-medium">{{ u.full_name or "—" }}</td>
+          <td class="px-5 py-4 text-gray-500">{{ u.email }}</td>
+          <td class="px-5 py-4">
             {% if u.role == "admin" %}
-              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">Admin</span>
+              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-700">Admin</span>
             {% else %}
-              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">Staff</span>
+              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-600">Staff</span>
             {% endif %}
           </td>
-          <td class="px-5 py-3">
+          <td class="px-5 py-4">
             {% if u.is_active %}
-              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Active</span>
+              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-medium bg-green-100 text-green-700">Active</span>
             {% else %}
-              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-500">Inactive</span>
+              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-medium bg-red-50 text-red-500">Inactive</span>
             {% endif %}
           </td>
-          <td class="px-5 py-3 text-xs text-gray-400">
+          <td class="px-5 py-4 text-sm text-gray-400">
             {% if u.last_login_at %}{{ u.last_login_at.strftime("%d %b %Y %H:%M") }}{% else %}Never{% endif %}
           </td>
-          <td class="px-5 py-3 text-right">
-            <a href="/portal/staff/users/{{ u.id }}/edit" class="text-xs font-medium text-gray-900 hover:underline">Edit</a>
+          <td class="px-5 py-4 text-right">
+            <a href="/portal/staff/users/{{ u.id }}/edit" class="text-sm font-medium text-gray-900 hover:underline">Edit</a>
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+  {% endif %}
 
 {% endblock %}

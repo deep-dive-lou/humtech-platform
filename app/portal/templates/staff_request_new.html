@@ -3,6 +3,9 @@
 {% block nav_active %}requests{% endblock %}
 {% block content_width %}max-w-3xl{% endblock %}
 
+{% block head %}
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+{% endblock %}
 
 {% block content %}
 
@@ -13,6 +16,7 @@
     </div>
 
     <form method="POST" action="/portal/staff/requests" class="space-y-6" id="newRequestForm">
+      <input type="hidden" name="template_id" id="real-template-id" value="" />
 
       <!-- Client details -->
       <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -79,35 +83,108 @@
         </div>
         <div class="p-6">
 
-          <!-- Template mode -->
-          <div id="template-mode">
-            <select
-              name="template_id"
-              id="template-select"
-              onchange="loadPreview(this.value)"
-              class="max-w-sm w-full border border-gray-200 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 ring-brand bg-white"
-            >
-              <option value="">Select a template...</option>
-              {% for t in templates %}
-              <option value="{{ t.id }}">{{ t.name }}</option>
-              {% endfor %}
-            </select>
+          <!-- Template selector -->
+          <select
+            id="template-select"
+            onchange="onTemplateChange(this.value)"
+            class="max-w-sm w-full border border-gray-200 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 ring-brand bg-white"
+          >
+            <option value="">Select a template...</option>
+            <option value="__custom__">Custom (one-time)</option>
+            {% for t in templates %}
+            <option value="{{ t.id }}">{{ t.name }}</option>
+            {% endfor %}
+          </select>
 
-            <div id="template-preview" class="hidden mt-4">
-              <p class="text-sm font-medium text-gray-500 mb-2">Items that will be added:</p>
-              <div id="preview-items" class="space-y-1.5"></div>
-            </div>
-
-            {% if not templates %}
-            <p class="text-sm text-gray-400 mt-3">
-              No templates yet.
-              <a href="/portal/staff/templates/new" class="underline hover:text-gray-700">Create one</a>
-              to speed up future requests.
-            </p>
-            {% endif %}
+          <!-- Template preview (shown when a real template is selected) -->
+          <div id="template-preview" class="hidden mt-4">
+            <p class="text-sm font-medium text-gray-500 mb-2">Items that will be added:</p>
+            <div id="preview-items" class="space-y-1.5"></div>
           </div>
 
+          {% if not templates %}
+          <p class="text-sm text-gray-400 mt-3" id="no-templates-hint">
+            No templates yet.
+            <a href="/portal/staff/templates/new" class="underline hover:text-gray-700">Create one</a>
+            to speed up future requests.
+          </p>
+          {% endif %}
+
         </div>
+
+        <!-- Custom item builder (shown when "Custom" is selected) -->
+        <div id="custom-mode" class="hidden">
+
+          <!-- Existing items list -->
+          <div id="items-list" class="divide-y divide-gray-100"></div>
+
+          <div id="items-empty" class="px-6 py-8 text-center">
+            <p class="text-sm text-gray-400">No documents added yet. Add your first one below.</p>
+          </div>
+
+          <!-- Add new item form -->
+          <div class="border-t-2 border-gray-200">
+            <div class="px-6 py-5 bg-gray-50/80">
+              <p class="text-base font-semibold text-gray-900 mb-0.5">Add a document</p>
+              <p class="text-sm text-gray-400 mb-4">Choose the type, then fill in the details.</p>
+
+              <!-- Type selection pills -->
+              <div class="flex items-center gap-2 mb-4" id="type-cards">
+                <button type="button" onclick="selectItemType('file_upload')" id="card-file_upload"
+                  class="inline-flex items-center gap-2 border-2 border-brand bg-white rounded-lg px-4 py-2 text-sm font-medium transition-all hover:shadow-sm">
+                  <i data-lucide="upload" class="w-4 h-4 text-gray-600"></i>
+                  File upload
+                </button>
+                <button type="button" onclick="selectItemType('signature')" id="card-signature"
+                  class="inline-flex items-center gap-2 border-2 border-gray-200 bg-white rounded-lg px-4 py-2 text-sm font-medium transition-all hover:shadow-sm hover:border-gray-300">
+                  <i data-lucide="pen-tool" class="w-4 h-4 text-purple-600"></i>
+                  Document to sign
+                </button>
+              </div>
+
+              <input type="hidden" id="new-item-type" value="file_upload" />
+
+              <div class="space-y-3 max-w-md">
+                <div>
+                  <label class="block text-sm font-medium text-gray-600 mb-1">Title</label>
+                  <input
+                    type="text"
+                    id="new-title"
+                    placeholder="e.g. Proof of address"
+                    class="w-full text-base border border-gray-200 rounded-lg px-3.5 py-2 bg-white focus:outline-none focus:ring-2 ring-brand"
+                    onkeydown="if(event.key==='Enter'){event.preventDefault();addItem();}"
+                  />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-600 mb-1">Instructions <span class="text-gray-400 font-normal">(optional)</span></label>
+                  <textarea
+                    id="new-instructions"
+                    rows="2"
+                    placeholder="e.g. Must be dated within the last 3 months"
+                    class="w-full text-sm border border-gray-200 rounded-lg px-3.5 py-2 bg-white text-gray-600 focus:outline-none focus:ring-2 ring-brand"
+                  ></textarea>
+                </div>
+                <div id="new-file-upload" class="hidden">
+                  <label class="block text-sm font-medium text-gray-600 mb-1">PDF to sign</label>
+                  <input type="file" id="new-file" accept=".pdf" class="text-sm" />
+                  <p class="text-xs text-amber-600 mt-1">Only PDF files accepted.</p>
+                  <p class="text-xs text-gray-400 mt-1">You can configure signing zones after adding.</p>
+                  <p id="new-file-status" class="text-sm text-gray-400 mt-1"></p>
+                </div>
+                <div class="pt-1">
+                  <button
+                    type="button"
+                    onclick="addItem()"
+                    class="text-sm font-medium btn-brand px-4 py-2 rounded-xl transition-colors"
+                  >
+                    Add to request
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div><!-- /custom-mode -->
+
       </div>
 
       <div class="flex items-center gap-4">
@@ -122,36 +199,1012 @@
 
     </form>
 
+<!-- Zone builder modal -->
+<div id="zoneBuilderModal" class="hidden fixed inset-0 bg-black/50 z-50 flex flex-col">
+  <div class="bg-white flex flex-col h-full">
+
+    <!-- Top bar: title / page nav / zoom -->
+    <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between flex-shrink-0 bg-white">
+      <div class="flex items-center gap-3">
+        <button onclick="closeZoneBuilder()" class="w-9 h-9 rounded-lg border border-gray-200 hover:bg-gray-50 flex items-center justify-center transition-colors" title="Close">
+          <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+        <button onclick="saveAllZones()" class="w-9 h-9 rounded-lg border border-gray-200 hover:bg-gray-50 flex items-center justify-center transition-colors" title="Save all zones">
+          <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+        </button>
+        <h2 class="text-lg font-bold text-gray-900 truncate max-w-xs" id="zb-title">Zone Builder</h2>
+      </div>
+      <div class="flex items-center gap-3">
+        <button onclick="zbChangePage(-1)" class="text-base font-medium border border-gray-200 w-9 h-9 rounded-lg hover:bg-gray-50 flex items-center justify-center">&larr;</button>
+        <span id="zb-page-info" class="text-base font-medium text-gray-700 min-w-[100px] text-center">Page 1 of 1</span>
+        <button onclick="zbChangePage(1)" class="text-base font-medium border border-gray-200 w-9 h-9 rounded-lg hover:bg-gray-50 flex items-center justify-center">&rarr;</button>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="zbZoom(-0.25)" class="text-base font-bold border border-gray-200 w-9 h-9 rounded-lg hover:bg-gray-50 flex items-center justify-center">&minus;</button>
+        <span id="zb-zoom-info" class="text-base font-medium text-gray-600 min-w-[48px] text-center">150%</span>
+        <button onclick="zbZoom(0.25)" class="text-base font-bold border border-gray-200 w-9 h-9 rounded-lg hover:bg-gray-50 flex items-center justify-center">+</button>
+        <button onclick="zbZoomReset()" class="text-sm font-medium border border-gray-200 px-3 h-9 rounded-lg hover:bg-gray-50 text-gray-500">Reset</button>
+      </div>
+    </div>
+
+    <!-- 3-column body -->
+    <div class="flex-1 flex overflow-hidden">
+
+      <!-- LEFT PANEL: Add zones + instructions -->
+      <div class="w-56 border-r border-gray-200 bg-gray-50 flex flex-col flex-shrink-0">
+        <div class="px-4 py-4">
+          <h3 class="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">Add Zone</h3>
+          <p class="text-sm text-gray-500 mb-4">Select a type, then click on the document to place it.</p>
+          <div class="space-y-2">
+            <button type="button" onclick="setActiveType('signature')" id="tb-signature"
+              class="w-full flex items-center gap-3 px-4 py-3 rounded-lg border-2 border-purple-400 bg-purple-50 text-left transition-all">
+              <span class="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+              </span>
+              <span class="text-base font-semibold text-purple-700">Signature</span>
+            </button>
+            <button type="button" onclick="setActiveType('text')" id="tb-text"
+              class="w-full flex items-center gap-3 px-4 py-3 rounded-lg border-2 border-gray-200 bg-white text-left transition-all hover:border-gray-300">
+              <span class="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+              </span>
+              <span class="text-base font-semibold text-gray-700">Text</span>
+            </button>
+            <button type="button" onclick="setActiveType('date')" id="tb-date"
+              class="w-full flex items-center gap-3 px-4 py-3 rounded-lg border-2 border-gray-200 bg-white text-left transition-all hover:border-gray-300">
+              <span class="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+              </span>
+              <span class="text-base font-semibold text-gray-700">Date</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Instructions -->
+        <div class="mt-auto px-4 py-4 border-t border-gray-200">
+          <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">How to use</h4>
+          <ul class="space-y-2.5 text-sm text-gray-600">
+            <li class="flex items-start gap-2">
+              <svg class="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2z"/></svg>
+              <span><strong>Click</strong> on the document to place</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <svg class="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m-12 4h12m-12 4h12"/></svg>
+              <span><strong>Arrow keys</strong> to nudge (Shift = 5%)</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <svg class="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+              <span><strong>Drag corners</strong> to resize</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <svg class="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              <span><strong>Delete</strong> key to remove</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- CENTER: PDF viewer -->
+      <div class="flex-1 overflow-auto bg-gray-100 flex justify-center p-6" id="zb-viewport">
+        <div id="zb-pdf-container" class="relative inline-block" style="user-select:none;">
+          <canvas id="zb-canvas"></canvas>
+        </div>
+      </div>
+
+      <!-- RIGHT PANEL: Placed zones -->
+      <div class="w-72 border-l border-gray-200 bg-gray-50 flex flex-col flex-shrink-0">
+        <div class="px-4 py-4 border-b border-gray-200">
+          <h3 class="text-sm font-bold text-gray-900 uppercase tracking-wider">Placed Zones</h3>
+          <p class="text-sm text-gray-500 mt-1" id="zb-zone-count">0 zones</p>
+        </div>
+        <div id="zb-sidebar" class="flex-1 overflow-y-auto">
+          <p class="px-4 py-8 text-sm text-gray-500 text-center" id="zb-sidebar-empty">Click on the document to place your first zone</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Footer: Cancel + Save -->
+    <div class="px-6 py-4 border-t border-gray-200 flex items-center justify-end flex-shrink-0 bg-white">
+      <div class="flex items-center gap-3">
+        <button type="button" onclick="closeZoneBuilder()" class="text-base text-gray-500 hover:text-gray-900 px-4 py-2">Cancel</button>
+        <button type="button" onclick="saveAllZones()" class="text-base font-medium btn-brand px-6 py-2.5 rounded-xl">Save all zones</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
-  <script>
-    async function loadPreview(templateId) {
-      const panel = document.getElementById('template-preview');
-      const list  = document.getElementById('preview-items');
-      if (!templateId) {
-        panel.classList.add('hidden');
-        list.innerHTML = '';
-        return;
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+
+  // -----------------------------------------------------------------------
+  // State
+  // -----------------------------------------------------------------------
+
+  let TEMPLATE_ID = '';        // Hidden template ID (set on first custom switch)
+  let isCustomMode = false;
+  const itemState = {};        // itemId -> { title, instructions, required, item_type, file_key, sig_*, zone_count }
+
+  // -----------------------------------------------------------------------
+  // Template / Custom mode switching
+  // -----------------------------------------------------------------------
+
+  async function onTemplateChange(value) {
+    const preview = document.getElementById('template-preview');
+    const previewList = document.getElementById('preview-items');
+    const customPanel = document.getElementById('custom-mode');
+    const hint = document.getElementById('no-templates-hint');
+
+    if (value === '__custom__') {
+      // Switch to custom mode
+      isCustomMode = true;
+      preview.classList.add('hidden');
+      previewList.innerHTML = '';
+      customPanel.classList.remove('hidden');
+      if (hint) hint.classList.add('hidden');
+
+      // Create hidden template if we don't have one yet
+      if (!TEMPLATE_ID) {
+        try {
+          const res = await fetch('/portal/staff/templates/quick', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: 'Custom request' }),
+          });
+          if (!res.ok) { alert('Failed to initialise custom request'); return; }
+          const data = await res.json();
+          TEMPLATE_ID = data.id;
+        } catch (err) {
+          alert('Failed to initialise custom request: ' + err.message);
+          return;
+        }
       }
-      const res = await fetch(`/portal/staff/templates/${templateId}/items`);
-      if (!res.ok) { panel.classList.add('hidden'); return; }
-      const items = await res.json();
-      list.innerHTML = items.map(i =>
-        `<div class="flex items-center gap-2 text-sm text-gray-600">
-          <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-          </svg>
-          ${escHtml(i.title)}
-          ${i.item_type === 'signature' ? '<span class="text-purple-600 font-medium">(sign)</span>' : ''}
-          ${i.required ? '' : '<span class="text-gray-400">(optional)</span>'}
-        </div>`
-      ).join('');
-      panel.classList.toggle('hidden', items.length === 0);
+      document.getElementById('real-template-id').value = TEMPLATE_ID;
+      return;
     }
 
-    function escHtml(str) {
-      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    // Switch to template mode
+    isCustomMode = false;
+    customPanel.classList.add('hidden');
+    if (hint) hint.classList.remove('hidden');
+
+    if (!value) {
+      preview.classList.add('hidden');
+      previewList.innerHTML = '';
+      document.getElementById('real-template-id').value = '';
+      return;
     }
-  </script>
+
+    // Load template preview
+    document.getElementById('real-template-id').value = value;
+    const res = await fetch(`/portal/staff/templates/${value}/items`);
+    if (!res.ok) { preview.classList.add('hidden'); return; }
+    const items = await res.json();
+    previewList.innerHTML = items.map(i =>
+      `<div class="flex items-center gap-2 text-sm text-gray-600">
+        <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>
+        ${escHtml(i.title)}
+        ${i.item_type === 'signature' ? '<span class="text-purple-600 font-medium">(sign)</span>' : ''}
+        ${i.required ? '' : '<span class="text-gray-400">(optional)</span>'}
+      </div>`
+    ).join('');
+    preview.classList.toggle('hidden', items.length === 0);
+  }
+
+  // -----------------------------------------------------------------------
+  // Item type selection
+  // -----------------------------------------------------------------------
+
+  function selectItemType(type) {
+    document.getElementById('new-item-type').value = type;
+    const upload = document.getElementById('card-file_upload');
+    const sign = document.getElementById('card-signature');
+    if (type === 'file_upload') {
+      upload.className = 'inline-flex items-center gap-2 border-2 border-brand bg-white rounded-lg px-4 py-2 text-sm font-medium transition-all hover:shadow-sm';
+      sign.className = 'inline-flex items-center gap-2 border-2 border-gray-200 bg-white rounded-lg px-4 py-2 text-sm font-medium transition-all hover:shadow-sm hover:border-gray-300';
+    } else {
+      sign.className = 'inline-flex items-center gap-2 border-2 border-brand bg-white rounded-lg px-4 py-2 text-sm font-medium transition-all hover:shadow-sm';
+      upload.className = 'inline-flex items-center gap-2 border-2 border-gray-200 bg-white rounded-lg px-4 py-2 text-sm font-medium transition-all hover:shadow-sm hover:border-gray-300';
+    }
+    document.getElementById('new-file-upload').classList.toggle('hidden', type !== 'signature');
+  }
+
+  // -----------------------------------------------------------------------
+  // Item CRUD
+  // -----------------------------------------------------------------------
+
+  function updateItemCount() {
+    const rows = document.querySelectorAll('#items-list > div');
+    const emptyState = document.getElementById('items-empty');
+    if (emptyState) emptyState.classList.toggle('hidden', rows.length > 0);
+  }
+
+  async function addItem() {
+    const titleEl = document.getElementById('new-title');
+    const instrEl = document.getElementById('new-instructions');
+    const typeEl  = document.getElementById('new-item-type');
+    const title = titleEl.value.trim();
+    if (!title) { titleEl.focus(); return; }
+
+    const item_type = typeEl.value;
+    let file_key = null;
+
+    if (item_type === 'signature') {
+      const fileInput = document.getElementById('new-file');
+      const file = fileInput.files[0];
+      if (!file) { alert('Please select a PDF document to sign'); return; }
+
+      const statusEl = document.getElementById('new-file-status');
+      statusEl.textContent = 'Uploading document...';
+
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const uploadRes = await fetch(`/portal/staff/templates/${TEMPLATE_ID}/upload-doc`, {
+          method: 'POST',
+          body: formData,
+        });
+        if (!uploadRes.ok) { alert('Upload failed: ' + uploadRes.status); statusEl.textContent = ''; return; }
+        const { file_key: fk } = await uploadRes.json();
+        file_key = fk;
+        statusEl.textContent = '';
+      } catch (err) {
+        console.error('Upload error:', err);
+        alert('Upload failed: ' + err.message);
+        document.getElementById('new-file-status').textContent = '';
+        return;
+      }
+    }
+
+    const res = await fetch(`/portal/staff/templates/${TEMPLATE_ID}/items`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, instructions: instrEl.value.trim(), required: true, item_type, file_key }),
+    });
+    if (!res.ok) { alert('Failed to add item'); return; }
+    const item = await res.json();
+
+    const typeBadge = item.item_type === 'signature'
+      ? '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-purple-100 text-purple-700 flex-shrink-0">Sign</span>'
+      : '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-500 flex-shrink-0">Upload</span>';
+
+    const zoneLink = (item.item_type === 'signature' && item.file_key)
+      ? `<button type="button" onclick="openZoneBuilder('${item.id}')" id="zone-btn-${item.id}"
+           class="inline-flex items-center gap-1.5 text-sm font-medium text-purple-600 hover:text-purple-800 transition-colors">
+           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+           Zones (0)
+         </button>
+         <span class="text-gray-200">|</span>` : '';
+
+    const instrText = item.instructions ? ` <span class="text-sm text-gray-400 truncate">&mdash; ${escHtml(item.instructions)}</span>` : '';
+
+    const list = document.getElementById('items-list');
+    const div = document.createElement('div');
+    div.className = 'px-6 py-3.5 flex items-center gap-3 group';
+    div.id = `row-${item.id}`;
+    div.innerHTML = `
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2.5">
+          ${typeBadge}
+          <span class="text-base font-medium text-gray-900 truncate item-title">${escHtml(item.title)}</span>
+          ${instrText}
+        </div>
+      </div>
+      <div class="flex items-center gap-3 flex-shrink-0">
+        ${zoneLink}
+        <button type="button" onclick="editItemInline('${item.id}')" class="text-sm text-gray-400 hover:text-gray-700 transition-colors">Edit</button>
+        <button type="button" onclick="deleteItem('${item.id}')" class="text-sm text-gray-400 hover:text-red-500 transition-colors">Remove</button>
+      </div>
+      <input type="hidden" data-field="title" value="${escHtml(item.title)}" />
+      <input type="hidden" data-field="instructions" value="${escHtml(item.instructions || '')}" />`;
+    list.appendChild(div);
+
+    itemState[item.id] = {
+      title: item.title, instructions: item.instructions || '', required: item.required,
+      item_type: item.item_type, file_key: item.file_key || '',
+      sig_page: null, sig_x: null, sig_y: null, sig_w: null, sig_h: null,
+      zone_count: 0,
+    };
+
+    titleEl.value = '';
+    instrEl.value = '';
+    selectItemType('file_upload');
+    const fileInput = document.getElementById('new-file');
+    if (fileInput) fileInput.value = '';
+    titleEl.focus();
+    updateItemCount();
+
+    // Auto-open zone builder for new signature items
+    if (item.item_type === 'signature' && item.file_key) {
+      setTimeout(() => openZoneBuilder(item.id), 300);
+    }
+  }
+
+  async function deleteItem(itemId) {
+    if (!confirm('Remove this item?')) return;
+    const res = await fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${itemId}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) { alert('Failed to remove item'); return; }
+    const row = document.getElementById(`row-${itemId}`);
+    if (row) row.remove();
+    delete itemState[itemId];
+    updateItemCount();
+  }
+
+  function editItemInline(itemId) {
+    const row = document.getElementById('row-' + itemId);
+    if (!row || row.dataset.editing) return;
+    row.dataset.editing = '1';
+    const state = itemState[itemId];
+    if (!state) return;
+
+    const typeBadge = state.item_type === 'signature'
+      ? '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-purple-100 text-purple-700 flex-shrink-0">Sign</span>'
+      : '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-500 flex-shrink-0">Upload</span>';
+
+    row.className = 'px-6 py-4 bg-gray-50/50';
+    row.innerHTML = `
+      <div class="space-y-2.5 max-w-md">
+        <div class="flex items-center gap-2">
+          ${typeBadge}
+          <input type="text" value="${escHtml(state.title)}" data-field="title"
+            class="flex-1 text-base border border-gray-200 rounded-lg px-3.5 py-2 focus:outline-none focus:ring-2 ring-brand" />
+        </div>
+        <textarea data-field="instructions" rows="2" placeholder="Instructions (optional)"
+          class="w-full text-sm border border-gray-200 rounded-lg px-3.5 py-2 text-gray-600 focus:outline-none focus:ring-1 focus:ring-gray-300">${escHtml(state.instructions || '')}</textarea>
+        <div class="flex items-center gap-3 pt-1">
+          <button type="button" onclick="saveItemInline('${itemId}')" class="text-sm font-medium btn-brand px-4 py-1.5 rounded-lg">Save</button>
+          <button type="button" onclick="cancelItemInline('${itemId}')" class="text-sm text-gray-400 hover:text-gray-700">Cancel</button>
+        </div>
+      </div>`;
+    row.querySelector('input[data-field="title"]').focus();
+  }
+
+  async function saveItemInline(itemId) {
+    const row = document.getElementById('row-' + itemId);
+    const titleInput = row.querySelector('input[data-field="title"]');
+    const instrInput = row.querySelector('textarea[data-field="instructions"]');
+    const state = itemState[itemId];
+    state.title = titleInput.value.trim();
+    state.instructions = instrInput.value.trim();
+
+    await fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${itemId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state),
+    });
+
+    rebuildItemRow(itemId);
+  }
+
+  function cancelItemInline(itemId) {
+    rebuildItemRow(itemId);
+  }
+
+  function rebuildItemRow(itemId) {
+    const row = document.getElementById('row-' + itemId);
+    const state = itemState[itemId];
+    if (!row || !state) return;
+    delete row.dataset.editing;
+
+    const typeBadge = state.item_type === 'signature'
+      ? '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-purple-100 text-purple-700 flex-shrink-0">Sign</span>'
+      : '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-500 flex-shrink-0">Upload</span>';
+
+    const zoneLink = (state.item_type === 'signature' && state.file_key)
+      ? `<button type="button" onclick="openZoneBuilder('${itemId}')" id="zone-btn-${itemId}"
+           class="inline-flex items-center gap-1.5 text-sm font-medium text-purple-600 hover:text-purple-800 transition-colors">
+           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+           Zones (${state.zone_count || 0})
+         </button>
+         <span class="text-gray-200">|</span>` : '';
+
+    const instrText = state.instructions ? ` <span class="text-sm text-gray-400 truncate">&mdash; ${escHtml(state.instructions)}</span>` : '';
+
+    row.className = 'px-6 py-3.5 flex items-center gap-3 group';
+    row.innerHTML = `
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2.5">
+          ${typeBadge}
+          <span class="text-base font-medium text-gray-900 truncate item-title">${escHtml(state.title)}</span>
+          ${instrText}
+        </div>
+      </div>
+      <div class="flex items-center gap-3 flex-shrink-0">
+        ${zoneLink}
+        <button type="button" onclick="editItemInline('${itemId}')" class="text-sm text-gray-400 hover:text-gray-700 transition-colors">Edit</button>
+        <button type="button" onclick="deleteItem('${itemId}')" class="text-sm text-gray-400 hover:text-red-500 transition-colors">Remove</button>
+      </div>
+      <input type="hidden" data-field="title" value="${escHtml(state.title)}" />
+      <input type="hidden" data-field="instructions" value="${escHtml(state.instructions || '')}" />`;
+  }
+
+  // -----------------------------------------------------------------------
+  // Form validation
+  // -----------------------------------------------------------------------
+
+  document.getElementById('newRequestForm').addEventListener('submit', function(e) {
+    const select = document.getElementById('template-select');
+    const templateId = document.getElementById('real-template-id').value;
+
+    if (select.value === '__custom__') {
+      const itemCount = document.querySelectorAll('#items-list > div').length;
+      if (itemCount === 0) {
+        e.preventDefault();
+        alert('Please add at least one document item.');
+        return;
+      }
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // Zone builder
+  // -----------------------------------------------------------------------
+
+  const ZONE_DEFAULTS = {
+    signature: { w: 25, h: 8, label: 'Signature' },
+    text:      { w: 20, h: 4, label: 'Text field' },
+    date:      { w: 15, h: 4, label: 'Date' },
+  };
+  const ZONE_COLORS = {
+    signature: { border: 'border-purple-500', bg: 'bg-purple-100/30', text: 'text-purple-700', ring: 'ring-purple-400',
+                 tbBorder: 'border-purple-400', tbBg: 'bg-purple-50', tbText: 'text-purple-700' },
+    text:      { border: 'border-blue-500', bg: 'bg-blue-100/30', text: 'text-blue-700', ring: 'ring-blue-400',
+                 tbBorder: 'border-blue-400', tbBg: 'bg-blue-50', tbText: 'text-blue-700' },
+    date:      { border: 'border-green-500', bg: 'bg-green-100/30', text: 'text-green-700', ring: 'ring-green-400',
+                 tbBorder: 'border-green-400', tbBg: 'bg-green-50', tbText: 'text-green-700' },
+  };
+  const MIN_ZONE_PCT = { w: 5, h: 2 };
+
+  let zbOpen = false;
+  let zbItemId = null;
+  let zbPdfDoc = null;
+  let zbCurrentPage = 1;
+  let zbCanvasW = 0, zbCanvasH = 0;
+  let zbActiveType = 'signature';
+  let zbSelectedId = null;
+  let zbScale = 1.5;
+  const zbZones = {};
+
+  const ZONE_PLACEHOLDERS = {
+    signature: 'e.g. Client signature',
+    text: 'e.g. First name',
+    date: 'e.g. Date of birth',
+  };
+
+  let zbDragging = null;
+  let zbResizing = null;
+  let zbJustDragged = false;
+
+  function setActiveType(type) {
+    zbActiveType = type;
+    for (const t of ['signature', 'text', 'date']) {
+      const btn = document.getElementById('tb-' + t);
+      const c = ZONE_COLORS[t];
+      if (t === type) {
+        btn.className = `w-full flex items-center gap-3 px-4 py-3 rounded-lg border-2 ${c.tbBorder} ${c.tbBg} text-left transition-all`;
+        btn.querySelector('span:last-child').className = `text-base font-semibold ${c.tbText}`;
+      } else {
+        btn.className = 'w-full flex items-center gap-3 px-4 py-3 rounded-lg border-2 border-gray-200 bg-white text-left transition-all hover:border-gray-300';
+        btn.querySelector('span:last-child').className = 'text-base font-semibold text-gray-700';
+      }
+    }
+  }
+
+  async function openZoneBuilder(itemId) {
+    zbItemId = itemId;
+    zbSelectedId = null;
+    zbActiveType = 'signature';
+    setActiveType('signature');
+
+    for (const k of Object.keys(zbZones)) delete zbZones[k];
+
+    const res = await fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${itemId}/zones`);
+    const data = await res.json();
+    for (const z of data.zones) {
+      zbZones[z.id] = { ...z, _new: false, _dirty: false, _deleted: false };
+    }
+
+    const url = `/portal/staff/templates/${TEMPLATE_ID}/items/${itemId}/pdf-bytes`;
+    const state = itemState[itemId];
+    document.getElementById('zb-title').textContent = 'Zone Builder — ' + (state ? state.title : '');
+
+    try {
+      zbPdfDoc = await pdfjsLib.getDocument(url).promise;
+      zbCurrentPage = 1;
+      zbOpen = true;
+      document.getElementById('zoneBuilderModal').classList.remove('hidden');
+      await zbRenderPage(zbCurrentPage);
+      zbRenderSidebar();
+    } catch (err) {
+      alert('Failed to load PDF: ' + err.message);
+    }
+  }
+
+  function closeZoneBuilder() {
+    document.getElementById('zoneBuilderModal').classList.add('hidden');
+    zbOpen = false;
+    zbItemId = null;
+    zbPdfDoc = null;
+    zbSelectedId = null;
+    const container = document.getElementById('zb-pdf-container');
+    container.querySelectorAll('.zone-div').forEach(el => el.remove());
+  }
+
+  async function zbRenderPage(num) {
+    const page = await zbPdfDoc.getPage(num);
+    const viewport = page.getViewport({ scale: zbScale });
+    const canvas = document.getElementById('zb-canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    zbCanvasW = viewport.width;
+    zbCanvasH = viewport.height;
+    const ctx = canvas.getContext('2d');
+    await page.render({ canvasContext: ctx, viewport }).promise;
+
+    document.getElementById('zb-page-info').textContent = `Page ${num} of ${zbPdfDoc.numPages}`;
+    document.getElementById('zb-zoom-info').textContent = `${Math.round(zbScale * 100)}%`;
+    zbSelectedId = null;
+    zbRenderAllZones();
+  }
+
+  function zbZoom(delta) {
+    const newScale = Math.round((zbScale + delta) * 100) / 100;
+    if (newScale < 0.5 || newScale > 3.0) return;
+    zbScale = newScale;
+    zbRenderPage(zbCurrentPage);
+  }
+
+  function zbZoomReset() {
+    zbScale = 1.5;
+    zbRenderPage(zbCurrentPage);
+  }
+
+  function zbChangePage(delta) {
+    if (!zbPdfDoc) return;
+    const next = zbCurrentPage + delta;
+    if (next < 1 || next > zbPdfDoc.numPages) return;
+    zbCurrentPage = next;
+    zbRenderPage(zbCurrentPage);
+  }
+
+  // Zone rendering
+  function zbRenderAllZones() {
+    const container = document.getElementById('zb-pdf-container');
+    container.querySelectorAll('.zone-div').forEach(el => el.remove());
+    for (const id of Object.keys(zbZones)) {
+      const z = zbZones[id];
+      if (z._deleted) continue;
+      if (z.page !== zbCurrentPage - 1) continue;
+      zbCreateZoneDiv(id);
+    }
+  }
+
+  function zbCreateZoneDiv(id) {
+    const z = zbZones[id];
+    const c = ZONE_COLORS[z.zone_type] || ZONE_COLORS.text;
+    const container = document.getElementById('zb-pdf-container');
+
+    const div = document.createElement('div');
+    div.id = 'zd-' + id;
+    div.className = `zone-div absolute border-2 border-dashed ${c.border} ${c.bg} cursor-move flex items-center justify-center`;
+    div.style.left = pctToPx(z.x, zbCanvasW) + 'px';
+    div.style.top = pctToPx(z.y, zbCanvasH) + 'px';
+    div.style.width = pctToPx(z.w, zbCanvasW) + 'px';
+    div.style.height = pctToPx(z.h, zbCanvasH) + 'px';
+
+    if (id === zbSelectedId) {
+      div.classList.add('ring-2', 'ring-offset-1', c.ring);
+    }
+
+    const label = document.createElement('p');
+    label.className = `${c.text} text-sm font-medium text-center pointer-events-none select-none truncate px-1`;
+    label.textContent = z.label;
+    div.appendChild(label);
+
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'zone-delete-btn absolute -top-3 -right-3 w-5 h-5 bg-red-500 text-white rounded-full text-xs font-bold flex items-center justify-center hover:bg-red-600 cursor-pointer';
+    delBtn.textContent = '\u00d7';
+    delBtn.style.lineHeight = '1';
+    if (id !== zbSelectedId) delBtn.style.display = 'none';
+    delBtn.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      zbDeleteZone(id);
+    });
+    div.appendChild(delBtn);
+
+    for (const handle of ['nw', 'ne', 'sw', 'se']) {
+      const h = document.createElement('div');
+      h.className = `absolute w-3 h-3 bg-white border-2 ${c.border} rounded-sm cursor-${handle}-resize`;
+      h.dataset.handle = handle;
+      h.dataset.zoneId = id;
+      if (handle[0] === 'n') h.style.top = '-5px'; else h.style.bottom = '-5px';
+      if (handle[1] === 'w') h.style.left = '-5px'; else h.style.right = '-5px';
+      if (id !== zbSelectedId) h.style.display = 'none';
+      h.addEventListener('mousedown', onResizeMousedown);
+      div.appendChild(h);
+    }
+
+    div.addEventListener('mousedown', onZoneMousedown);
+    container.appendChild(div);
+  }
+
+  function zbUpdateZoneDiv(id) {
+    const z = zbZones[id];
+    const div = document.getElementById('zd-' + id);
+    if (!div) return;
+    div.style.left = pctToPx(z.x, zbCanvasW) + 'px';
+    div.style.top = pctToPx(z.y, zbCanvasH) + 'px';
+    div.style.width = pctToPx(z.w, zbCanvasW) + 'px';
+    div.style.height = pctToPx(z.h, zbCanvasH) + 'px';
+  }
+
+  function zbSelectZone(id) {
+    const prevId = zbSelectedId;
+    zbSelectedId = id;
+    if (prevId && prevId !== id) zbToggleZoneSelection(prevId, false);
+    if (id) zbToggleZoneSelection(id, true);
+    zbRenderSidebar();
+  }
+
+  function zbToggleZoneSelection(id, selected) {
+    const div = document.getElementById('zd-' + id);
+    if (!div) return;
+    const z = zbZones[id];
+    if (!z) return;
+    const c = ZONE_COLORS[z.zone_type] || ZONE_COLORS.text;
+    if (selected) {
+      div.classList.add('ring-2', 'ring-offset-1', c.ring);
+    } else {
+      div.classList.remove('ring-2', 'ring-offset-1');
+      for (const col of Object.values(ZONE_COLORS)) div.classList.remove(col.ring);
+    }
+    div.querySelectorAll('[data-handle]').forEach(h => h.style.display = selected ? '' : 'none');
+    const delBtn = div.querySelector('.zone-delete-btn');
+    if (delBtn) delBtn.style.display = selected ? '' : 'none';
+  }
+
+  // Sidebar
+  function zbRenderSidebar() {
+    const sidebar = document.getElementById('zb-sidebar');
+    const allZones = Object.values(zbZones).filter(z => !z._deleted);
+
+    const countEl = document.getElementById('zb-zone-count');
+    if (countEl) countEl.textContent = `${allZones.length} zone${allZones.length !== 1 ? 's' : ''}`;
+
+    if (allZones.length === 0) {
+      sidebar.innerHTML = '<p class="px-4 py-8 text-sm text-gray-400 text-center" id="zb-sidebar-empty">Click on the document to place your first zone</p>';
+      return;
+    }
+
+    allZones.sort((a, b) => a.sort_order - b.sort_order);
+    let html = '';
+    for (const z of allZones) {
+      const c = ZONE_COLORS[z.zone_type] || ZONE_COLORS.text;
+      const selected = z.id === zbSelectedId;
+      const bgClass = selected ? 'bg-blue-50/50 border-l-2 border-l-blue-400' : 'border-l-2 border-l-transparent';
+      const placeholder = ZONE_PLACEHOLDERS[z.zone_type] || 'Label';
+      html += `
+        <div class="px-4 py-3 ${bgClass} cursor-pointer hover:bg-gray-50 border-b border-gray-100 group" onclick="zbSelectZoneAndNav('${z.id}')">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${c.bg} ${c.text} border ${c.border}">${z.zone_type}</span>
+            <span class="text-xs text-gray-400 font-medium">Page ${z.page + 1}</span>
+            <button type="button" onclick="event.stopPropagation(); zbDeleteZone('${z.id}')" class="ml-auto text-sm text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" title="Remove zone">&times;</button>
+          </div>
+          <input type="text" value="${escHtml(z.label)}" data-zone-id="${z.id}"
+            placeholder="${placeholder}"
+            class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-300 bg-white"
+            onclick="event.stopPropagation()"
+            onblur="zbUpdateLabel('${z.id}', this.value)" />
+        </div>`;
+    }
+    sidebar.innerHTML = html;
+  }
+
+  function zbSelectZoneAndNav(id) {
+    const z = zbZones[id];
+    if (!z) return;
+    if (z.page !== zbCurrentPage - 1) {
+      zbCurrentPage = z.page + 1;
+      zbRenderPage(zbCurrentPage).then(() => {
+        zbSelectedId = id;
+        zbRenderAllZones();
+        zbRenderSidebar();
+      });
+    } else {
+      zbSelectZone(id);
+    }
+  }
+
+  function zbUpdateLabel(id, value) {
+    const z = zbZones[id];
+    if (!z) return;
+    z.label = value.trim() || ZONE_DEFAULTS[z.zone_type].label;
+    z._dirty = true;
+    const div = document.getElementById('zd-' + id);
+    if (div) {
+      const p = div.querySelector('p');
+      if (p) p.textContent = z.label;
+    }
+  }
+
+  function zbDeleteZone(id) {
+    const z = zbZones[id];
+    if (!z) return;
+    z._deleted = true;
+    const div = document.getElementById('zd-' + id);
+    if (div) div.remove();
+    if (zbSelectedId === id) zbSelectedId = null;
+    zbRenderSidebar();
+  }
+
+  // Canvas click — place new zone
+  document.getElementById('zb-canvas').addEventListener('click', function(e) {
+    if (!zbOpen) return;
+    if (zbDragging || zbResizing || zbJustDragged) return;
+
+    const rect = this.getBoundingClientRect();
+    const scaleX = zbCanvasW / rect.width;
+    const scaleY = zbCanvasH / rect.height;
+    const xPct = ((e.clientX - rect.left) * scaleX / zbCanvasW) * 100;
+    const yPct = ((e.clientY - rect.top) * scaleY / zbCanvasH) * 100;
+
+    const defaults = ZONE_DEFAULTS[zbActiveType];
+    let w = defaults.w, h = defaults.h;
+    let x = xPct, y = yPct;
+
+    if (x + w > 100) w = 100 - x;
+    if (y + h > 100) h = 100 - y;
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+
+    const id = 'new-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    const maxOrder = Math.max(-1, ...Object.values(zbZones).filter(z => !z._deleted).map(z => z.sort_order));
+
+    zbZones[id] = {
+      id, zone_type: zbActiveType, label: defaults.label,
+      page: zbCurrentPage - 1, x: round2(x), y: round2(y), w: round2(w), h: round2(h),
+      sort_order: maxOrder + 1, required: true,
+      _new: true, _dirty: false, _deleted: false,
+    };
+
+    zbCreateZoneDiv(id);
+    const prevId = zbSelectedId;
+    if (prevId) zbToggleZoneSelection(prevId, false);
+    zbSelectedId = id;
+    zbToggleZoneSelection(id, true);
+    zbRenderSidebar();
+  });
+
+  // Zone drag
+  function onZoneMousedown(e) {
+    if (e.target.dataset.handle || e.target.classList.contains('zone-delete-btn')) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const div = e.currentTarget;
+    const id = div.id.replace('zd-', '');
+
+    const container = document.getElementById('zb-pdf-container');
+    const containerRect = container.getBoundingClientRect();
+    const scaleX = zbCanvasW / containerRect.width;
+    const scaleY = zbCanvasH / containerRect.height;
+    const zoneRect = div.getBoundingClientRect();
+
+    zbSelectZone(id);
+
+    zbDragging = {
+      zoneId: id,
+      offX: (e.clientX - zoneRect.left) * scaleX,
+      offY: (e.clientY - zoneRect.top) * scaleY,
+    };
+  }
+
+  // Resize
+  function onResizeMousedown(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const handle = e.target.dataset.handle;
+    const id = e.target.dataset.zoneId;
+    const z = zbZones[id];
+    if (!z) return;
+
+    zbResizing = {
+      zoneId: id,
+      handle,
+      startX: e.clientX,
+      startY: e.clientY,
+      startZone: { x: z.x, y: z.y, w: z.w, h: z.h },
+    };
+  }
+
+  // Global mouse handlers
+  document.addEventListener('mousemove', function(e) {
+    if (!zbOpen) return;
+
+    const container = document.getElementById('zb-pdf-container');
+    const containerRect = container.getBoundingClientRect();
+    const scaleX = zbCanvasW / containerRect.width;
+    const scaleY = zbCanvasH / containerRect.height;
+
+    if (zbDragging) {
+      const z = zbZones[zbDragging.zoneId];
+      if (!z) return;
+      let newXpx = (e.clientX - containerRect.left) * scaleX - zbDragging.offX;
+      let newYpx = (e.clientY - containerRect.top) * scaleY - zbDragging.offY;
+      const wPx = pctToPx(z.w, zbCanvasW);
+      const hPx = pctToPx(z.h, zbCanvasH);
+      newXpx = Math.max(0, Math.min(zbCanvasW - wPx, newXpx));
+      newYpx = Math.max(0, Math.min(zbCanvasH - hPx, newYpx));
+      z.x = round2(newXpx / zbCanvasW * 100);
+      z.y = round2(newYpx / zbCanvasH * 100);
+      z._dirty = true;
+      zbUpdateZoneDiv(zbDragging.zoneId);
+    }
+
+    if (zbResizing) {
+      const z = zbZones[zbResizing.zoneId];
+      if (!z) return;
+      const s = zbResizing.startZone;
+      const dxPct = (e.clientX - zbResizing.startX) * scaleX / zbCanvasW * 100;
+      const dyPct = (e.clientY - zbResizing.startY) * scaleY / zbCanvasH * 100;
+      const handle = zbResizing.handle;
+
+      let nx = s.x, ny = s.y, nw = s.w, nh = s.h;
+
+      if (handle === 'se') { nw = s.w + dxPct; nh = s.h + dyPct; }
+      else if (handle === 'sw') { nx = s.x + dxPct; nw = s.w - dxPct; nh = s.h + dyPct; }
+      else if (handle === 'ne') { ny = s.y + dyPct; nw = s.w + dxPct; nh = s.h - dyPct; }
+      else if (handle === 'nw') { nx = s.x + dxPct; ny = s.y + dyPct; nw = s.w - dxPct; nh = s.h - dyPct; }
+
+      if (nw < MIN_ZONE_PCT.w) { nw = MIN_ZONE_PCT.w; if (handle === 'nw' || handle === 'sw') nx = s.x + s.w - MIN_ZONE_PCT.w; }
+      if (nh < MIN_ZONE_PCT.h) { nh = MIN_ZONE_PCT.h; if (handle === 'nw' || handle === 'ne') ny = s.y + s.h - MIN_ZONE_PCT.h; }
+
+      if (nx < 0) { nw += nx; nx = 0; }
+      if (ny < 0) { nh += ny; ny = 0; }
+      if (nx + nw > 100) nw = 100 - nx;
+      if (ny + nh > 100) nh = 100 - ny;
+
+      z.x = round2(nx); z.y = round2(ny); z.w = round2(nw); z.h = round2(nh);
+      z._dirty = true;
+      zbUpdateZoneDiv(zbResizing.zoneId);
+    }
+  });
+
+  document.addEventListener('mouseup', function() {
+    if (zbDragging || zbResizing) {
+      const wasDragging = !!zbDragging;
+      const wasResizing = !!zbResizing;
+      zbDragging = null;
+      zbResizing = null;
+      if (wasDragging || wasResizing) {
+        zbJustDragged = true;
+        setTimeout(() => { zbJustDragged = false; }, 50);
+      }
+    }
+  });
+
+  // Arrow keys
+  document.addEventListener('keydown', function(e) {
+    if (!zbOpen || !zbSelectedId) return;
+    const z = zbZones[zbSelectedId];
+    if (!z || z._deleted) return;
+
+    const step = e.shiftKey ? 5 : 1;
+    let handled = false;
+
+    if (e.key === 'ArrowLeft')  { z.x = Math.max(0, z.x - step); handled = true; }
+    if (e.key === 'ArrowRight') { z.x = Math.min(100 - z.w, z.x + step); handled = true; }
+    if (e.key === 'ArrowUp')    { z.y = Math.max(0, z.y - step); handled = true; }
+    if (e.key === 'ArrowDown')  { z.y = Math.min(100 - z.h, z.y + step); handled = true; }
+
+    if (handled) {
+      e.preventDefault();
+      z.x = round2(z.x);
+      z.y = round2(z.y);
+      z._dirty = true;
+      zbUpdateZoneDiv(zbSelectedId);
+      return;
+    }
+
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
+      e.preventDefault();
+      zbDeleteZone(zbSelectedId);
+    }
+  });
+
+  // Save all zones
+  async function saveAllZones() {
+    const saves = [];
+
+    for (const [id, z] of Object.entries(zbZones)) {
+      if (z._deleted && !z._new) {
+        saves.push(fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${zbItemId}/zones/${id}`, { method: 'DELETE' }));
+      } else if (z._deleted && z._new) {
+        // Never persisted, skip
+      } else if (z._new) {
+        saves.push(
+          fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${zbItemId}/zones`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              zone_type: z.zone_type, label: z.label, page: z.page,
+              x: z.x, y: z.y, w: z.w, h: z.h, required: z.required,
+            }),
+          })
+        );
+      } else if (z._dirty) {
+        saves.push(
+          fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${zbItemId}/zones/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              zone_type: z.zone_type, label: z.label, page: z.page,
+              x: z.x, y: z.y, w: z.w, h: z.h, required: z.required,
+            }),
+          })
+        );
+      }
+    }
+
+    await Promise.all(saves);
+
+    // Update zone count badge in item row
+    const liveZones = Object.values(zbZones).filter(z => !z._deleted);
+    const count = liveZones.length;
+    if (itemState[zbItemId]) itemState[zbItemId].zone_count = count;
+    const btn = document.getElementById('zone-btn-' + zbItemId);
+    if (btn) btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg> Zones (${count})`;
+
+    // Sync first signature zone to sig_* columns for backward compat
+    const firstSig = liveZones.find(z => z.zone_type === 'signature');
+    const state = itemState[zbItemId];
+    if (state) {
+      if (firstSig) {
+        state.sig_page = firstSig.page;
+        state.sig_x = round2(firstSig.x);
+        state.sig_y = round2(firstSig.y);
+        state.sig_w = round2(firstSig.w);
+        state.sig_h = round2(firstSig.h);
+      } else {
+        state.sig_page = null;
+        state.sig_x = null;
+        state.sig_y = null;
+        state.sig_w = null;
+        state.sig_h = null;
+      }
+      await fetch(`/portal/staff/templates/${TEMPLATE_ID}/items/${zbItemId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state),
+      });
+    }
+
+    closeZoneBuilder();
+  }
+
+  // -----------------------------------------------------------------------
+  // Helpers
+  // -----------------------------------------------------------------------
+
+  function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function pctToPx(pct, dim) { return pct / 100 * dim; }
+  function round2(n) { return Math.round(n * 100) / 100; }
+
+  // Re-init Lucide icons for type cards
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+</script>
 {% endblock %}

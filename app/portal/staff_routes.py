@@ -333,6 +333,23 @@ async def create_template(
     )
 
 
+@router.post("/templates/quick", response_class=JSONResponse)
+async def create_template_quick(
+    body: dict = Body(...),
+    staff: dict = Depends(require_staff),
+    conn: asyncpg.Connection = Depends(get_conn),
+):
+    """Create a hidden template for one-time custom requests (AJAX)."""
+    template_id = await conn.fetchval(
+        """INSERT INTO portal.templates (tenant_id, name, description, is_active, created_by)
+           VALUES ($1::uuid, $2, NULL, false, $3::uuid) RETURNING id""",
+        staff["tenant_id"],
+        body.get("name", "Custom request"),
+        staff["staff_id"],
+    )
+    return {"id": str(template_id)}
+
+
 @router.get("/templates/{template_id}/edit", response_class=HTMLResponse)
 async def staff_template_edit(
     template_id: str,
@@ -1065,6 +1082,30 @@ async def staff_request_new_form(
     staff: dict = Depends(require_staff),
     conn: asyncpg.Connection = Depends(get_conn),
 ):
+    # Clean up orphaned hidden templates from abandoned custom requests
+    orphan_ids = [
+        r["id"]
+        for r in await conn.fetch(
+            """SELECT id FROM portal.templates
+               WHERE created_by = $1::uuid AND is_active = false
+               AND id NOT IN (SELECT template_id FROM portal.doc_requests WHERE template_id IS NOT NULL)""",
+            staff["staff_id"],
+        )
+    ]
+    if orphan_ids:
+        await conn.execute(
+            "DELETE FROM portal.template_item_zones WHERE template_item_id IN (SELECT id FROM portal.template_items WHERE template_id = ANY($1::uuid[]))",
+            orphan_ids,
+        )
+        await conn.execute(
+            "DELETE FROM portal.template_items WHERE template_id = ANY($1::uuid[])",
+            orphan_ids,
+        )
+        await conn.execute(
+            "DELETE FROM portal.templates WHERE id = ANY($1::uuid[])",
+            orphan_ids,
+        )
+
     tmplts = await conn.fetch(
         "SELECT id, name FROM portal.templates WHERE tenant_id = $1::uuid AND is_active = true ORDER BY name",
         staff["tenant_id"],
@@ -1198,6 +1239,30 @@ async def create_request(
                         z["x"], z["y"], z["w"], z["h"],
                         z["sort_order"], z["required"],
                     )
+
+            # Delete hidden template after cloning (one-time custom requests)
+            is_hidden = await conn.fetchval(
+                "SELECT NOT is_active FROM portal.templates WHERE id = $1::uuid",
+                template_id,
+            )
+            if is_hidden:
+                await conn.execute(
+                    "DELETE FROM portal.template_item_zones WHERE template_item_id IN (SELECT id FROM portal.template_items WHERE template_id = $1::uuid)",
+                    template_id,
+                )
+                await conn.execute(
+                    "DELETE FROM portal.template_items WHERE template_id = $1::uuid",
+                    template_id,
+                )
+                await conn.execute(
+                    "DELETE FROM portal.templates WHERE id = $1::uuid",
+                    template_id,
+                )
+                # Clear template reference since the template no longer exists
+                await conn.execute(
+                    "UPDATE portal.doc_requests SET template_id = NULL WHERE id = $1::uuid",
+                    request_id,
+                )
 
         # Create manual items (if no template or in addition to template)
         if manual_items.strip():

@@ -8,12 +8,14 @@
 
     <div class="flex items-center justify-between mb-6">
       <h1 class="text-2xl font-semibold">Document Templates</h1>
+      {% if tmplts %}
       <a
         href="/portal/staff/templates/new"
         class="text-base font-medium btn-brand px-5 py-2.5 rounded-xl transition-colors"
       >
         New Template
       </a>
+      {% endif %}
     </div>
 
     {% if not tmplts %}
