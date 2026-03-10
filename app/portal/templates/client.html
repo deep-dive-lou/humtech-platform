@@ -102,7 +102,7 @@
     </div>
 
     <!-- Checklist -->
-    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <div class="bg-white rounded-xl border border-gray-200">
       <div class="divide-y divide-gray-100">
         {% for item in items %}
         <div class="p-5 {% if item.status == 'approved' %}bg-green-50 border-l-4 border-l-green-500{% elif item.status == 'uploaded' %}bg-blue-50 border-l-4 border-l-blue-500{% else %}border-l-4 border-l-gray-300{% endif %}" id="item-{{ item.id }}">
@@ -157,7 +157,7 @@
                 <!-- Zone-aware document (multi-zone PDF overlay) -->
                 <div class="mt-2" id="upload-{{ item.id }}">
                   <button type="button" id="open-doc-btn-{{ item.id }}" onclick="toggleZoneDoc('{{ item.id }}')"
-                          class="w-full sm:w-auto inline-flex items-center justify-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg cursor-pointer transition-all text-white shadow-sm hover:shadow-md"
+                          class="w-full sm:w-auto inline-flex items-center justify-center gap-2 text-base font-medium px-5 py-2.5 rounded-xl cursor-pointer transition-all text-white shadow-sm hover:shadow-md"
                           style="background-color: {{ brand_color }};"
                           onmouseover="this.style.filter='brightness(1.1)'" onmouseout="this.style.filter=''">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -228,7 +228,7 @@
                           <span class="text-sm text-gray-600 submit-hint">Sign to enable submission</span>
                         </div>
                         <button type="button" id="submit-zones-btn-{{ item.id }}" onclick="submitAllZones('{{ item.id }}')"
-                                class="text-sm font-semibold px-6 py-2.5 rounded-lg text-white transition-all shadow-md hover:shadow-lg"
+                                class="text-base font-semibold px-6 py-2.5 rounded-xl text-white transition-all shadow-md hover:shadow-lg"
                                 style="background-color: {{ brand_color }};">
                           Submit document
                         </button>
@@ -243,7 +243,7 @@
                 <div class="mt-2" id="upload-{{ item.id }}">
                   <!-- Collapsed: click to open -->
                   <button type="button" id="open-doc-btn-{{ item.id }}" onclick="toggleDocForSigning('{{ item.id }}')"
-                          class="w-full sm:w-auto inline-flex items-center justify-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg cursor-pointer transition-all text-white shadow-sm hover:shadow-md"
+                          class="w-full sm:w-auto inline-flex items-center justify-center gap-2 text-base font-medium px-5 py-2.5 rounded-xl cursor-pointer transition-all text-white shadow-sm hover:shadow-md"
                           style="background-color: {{ brand_color }};"
                           onmouseover="this.style.filter='brightness(1.1)'" onmouseout="this.style.filter=''">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -363,7 +363,7 @@
                 <div class="mt-2" id="upload-{{ item.id }}">
                   <label
                     for="file-{{ item.id }}"
-                    class="w-full sm:w-auto inline-flex items-center justify-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg cursor-pointer transition-all text-white shadow-sm hover:shadow-md"
+                    class="w-full sm:w-auto inline-flex items-center justify-center gap-2 text-base font-medium px-5 py-2.5 rounded-xl cursor-pointer transition-all text-white shadow-sm hover:shadow-md"
                     style="background-color: {{ brand_color }};"
                     onmouseover="this.style.filter='brightness(1.1)'" onmouseout="this.style.filter=''"
                   >

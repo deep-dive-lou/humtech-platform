@@ -19,9 +19,10 @@
     </div>
 
     <!-- Filter bar -->
-    <div class="flex flex-wrap items-center gap-4 mb-6">
-      <form method="GET" action="/portal/staff/requests" class="relative flex-1 min-w-[220px] max-w-sm">
-        {% if active_status %}<input type="hidden" name="status" value="{{ active_status }}">{% endif %}
+    <div class="flex flex-wrap items-center gap-3 mb-6">
+      <form id="filter-form" method="GET" action="/portal/staff/requests" class="relative flex-1 min-w-[220px] max-w-sm">
+        <input type="hidden" name="users" id="h-users" value="{{ active_user_ids | join(',') }}" />
+        <input type="hidden" name="filters" id="h-filters" value="{{ active_filters | join(',') }}" />
         <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"></i>
         <input
           type="text"
@@ -32,16 +33,65 @@
           style="--tw-ring-color: {{ bc }}40"
         />
       </form>
-      <div class="flex items-center gap-2">
-        {% for label, val in [('All', ''), ('Mine', 'mine'), ('Open', 'open'), ('Review', 'awaiting_review'), ('Overdue', 'overdue'), ('Closed', 'closed')] %}
-        <a href="/portal/staff/requests?status={{ val }}{% if q %}&q={{ q }}{% endif %}"
-           class="text-sm px-4 py-2 rounded-lg font-medium transition-colors
-                  {% if active_status == val %}text-white{% else %}border border-gray-200 text-gray-600 hover:bg-gray-50{% endif %}"
-           {% if active_status == val %}style="background-color: {{ bc }}"{% endif %}>
-          {{ label }}
-        </a>
-        {% endfor %}
+
+      <!-- Status filter dropdown -->
+      <div class="relative" id="status-dropdown">
+        <button type="button" onclick="toggleDropdown('status')"
+                class="inline-flex items-center gap-2 text-sm px-4 py-2.5 rounded-xl border border-gray-200 font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+          <i data-lucide="filter" class="w-4 h-4"></i>
+          <span id="status-label">
+            {% if active_filters %}{{ active_filters | length }} status{% else %}Status{% endif %}
+          </span>
+          <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-gray-400"></i>
+        </button>
+        <div id="status-menu" class="hidden absolute right-0 top-full mt-2 w-56 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-2">
+          {% for label, val in [('Open', 'open'), ('Awaiting review', 'review'), ('Overdue', 'overdue'), ('Closed', 'closed')] %}
+          <label class="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 cursor-pointer">
+            <input type="checkbox" class="filter-check w-4 h-4 rounded" data-type="filter" value="{{ val }}"
+                   {% if val in active_filters %}checked{% endif %}
+                   onchange="applyFilters()" />
+            <span class="text-sm text-gray-700">{{ label }}</span>
+          </label>
+          {% endfor %}
+          <div class="border-t border-gray-100 mt-1 pt-1">
+            <button type="button" onclick="clearGroup('filter')" class="w-full text-left px-4 py-2 text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-50">Clear</button>
+          </div>
+        </div>
       </div>
+
+      <!-- Created by filter dropdown -->
+      {% if staff_users | length > 1 %}
+      <div class="relative" id="user-dropdown">
+        <button type="button" onclick="toggleDropdown('user')"
+                class="inline-flex items-center gap-2 text-sm px-4 py-2.5 rounded-xl border border-gray-200 font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+          <i data-lucide="user" class="w-4 h-4"></i>
+          <span id="user-label">
+            {% if active_user_ids %}{{ active_user_ids | length }} user{{ 's' if active_user_ids | length > 1 }}{% else %}Created by{% endif %}
+          </span>
+          <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-gray-400"></i>
+        </button>
+        <div id="user-menu" class="hidden absolute right-0 top-full mt-2 w-56 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1">
+          <div class="px-3 py-2">
+            <input type="text" id="user-search" placeholder="Search..."
+                   oninput="filterUsers(this.value)"
+                   class="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-gray-300" />
+          </div>
+          <div id="user-list" class="max-h-48 overflow-y-auto">
+            {% for u in staff_users %}
+            <label class="user-option flex items-center gap-3 px-4 py-2 hover:bg-gray-50 cursor-pointer" data-name="{{ u.full_name | lower }}">
+              <input type="checkbox" class="filter-check w-4 h-4 rounded" data-type="user" value="{{ u.id }}"
+                     {% if u.id in active_user_ids %}checked{% endif %}
+                     onchange="applyFilters()" />
+              <span class="text-sm text-gray-700">{{ u.full_name }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          <div class="border-t border-gray-100 mt-1 pt-1">
+            <button type="button" onclick="clearGroup('user')" class="w-full text-left px-4 py-2 text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-50">Clear</button>
+          </div>
+        </div>
+      </div>
+      {% endif %}
     </div>
 
     {% if not requests %}
@@ -154,6 +204,46 @@
 
 {% block scripts %}
 <script>
+  // --- Filter dropdowns ---
+  function toggleDropdown(type) {
+    const menus = { status: 'status-menu', user: 'user-menu' };
+    // Close the other dropdown
+    for (const [key, id] of Object.entries(menus)) {
+      if (key !== type) document.getElementById(id)?.classList.add('hidden');
+    }
+    document.getElementById(menus[type])?.classList.toggle('hidden');
+  }
+
+  document.addEventListener('click', (e) => {
+    if (!document.getElementById('status-dropdown')?.contains(e.target)) {
+      document.getElementById('status-menu')?.classList.add('hidden');
+    }
+    if (!document.getElementById('user-dropdown')?.contains(e.target)) {
+      document.getElementById('user-menu')?.classList.add('hidden');
+    }
+  });
+
+  function applyFilters() {
+    const users = [...document.querySelectorAll('.filter-check[data-type="user"]:checked')].map(cb => cb.value);
+    const filters = [...document.querySelectorAll('.filter-check[data-type="filter"]:checked')].map(cb => cb.value);
+    document.getElementById('h-users').value = users.join(',');
+    document.getElementById('h-filters').value = filters.join(',');
+    document.getElementById('filter-form').submit();
+  }
+
+  function clearGroup(type) {
+    document.querySelectorAll(`.filter-check[data-type="${type}"]`).forEach(cb => cb.checked = false);
+    applyFilters();
+  }
+
+  function filterUsers(query) {
+    const q = query.toLowerCase();
+    document.querySelectorAll('.user-option').forEach(el => {
+      el.style.display = el.dataset.name.includes(q) ? '' : 'none';
+    });
+  }
+
+  // --- Bulk actions ---
   function toggleSelectAll(el) {
     document.querySelectorAll('.row-check').forEach(cb => cb.checked = el.checked);
     updateBulkBar();

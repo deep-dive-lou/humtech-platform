@@ -3,15 +3,6 @@
 {% block nav_active %}requests{% endblock %}
 {% block content_width %}max-w-3xl{% endblock %}
 
-{% set bc = brand.brand_color or '#111827' %}
-
-{% block head %}
-  <style>
-    .btn-brand { background-color: {{ bc }}; color: #fff; }
-    .btn-brand:hover { filter: brightness(1.15); }
-    .ring-brand:focus { --tw-ring-color: {{ bc }}40; }
-  </style>
-{% endblock %}
 
 {% block content %}
 

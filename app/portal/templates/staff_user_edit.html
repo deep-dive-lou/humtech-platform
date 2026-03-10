@@ -23,110 +23,141 @@
       method="POST"
       action="{% if user %}/portal/staff/users/{{ user.id }}{% else %}/portal/staff/users{% endif %}"
     >
-      <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-5">
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm">
 
-        <div class="grid grid-cols-2 gap-5">
-          <div>
-            <label class="block text-sm font-medium text-gray-600 mb-1.5">Full name <span class="text-red-400">*</span></label>
-            <input
-              type="text"
-              name="full_name"
-              required
-              value="{{ user.full_name if user else '' }}"
-              placeholder="Jane Smith"
-              class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-gray-900"
-            />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-600 mb-1.5">Email <span class="text-red-400">*</span></label>
-            <input
-              type="email"
-              name="email"
-              required
-              value="{{ user.email if user else '' }}"
-              placeholder="jane@example.com"
-              {% if user %}readonly class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-base bg-gray-50 text-gray-500"{% else %}class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-gray-900"{% endif %}
-            />
-            {% if user %}<p class="text-sm text-gray-400 mt-1">Email cannot be changed.</p>{% endif %}
-          </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-5">
-          <div>
-            <label class="block text-sm font-medium text-gray-600 mb-1.5">Role</label>
-            <select
-              name="role"
-              class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white"
-            >
-              <option value="staff" {% if user and user.role == 'staff' %}selected{% elif not user %}selected{% endif %}>Staff</option>
-              <option value="admin" {% if user and user.role == 'admin' %}selected{% endif %}>Admin</option>
-            </select>
-          </div>
-          {% if user %}
-          <div>
-            <label class="block text-sm font-medium text-gray-600 mb-1.5">Status</label>
-            <div class="flex items-center gap-2 mt-2">
-              <input
-                type="checkbox"
-                name="is_active"
-                id="is_active"
-                {% if user.is_active %}checked{% endif %}
-                class="rounded"
-              />
-              <label for="is_active" class="text-base text-gray-600 cursor-pointer">Active</label>
-            </div>
-          </div>
-          {% endif %}
-        </div>
-
-        <div class="border-t border-gray-100 pt-5">
-          <h3 class="text-base font-semibold mb-3">{% if user %}Change password{% else %}Password{% endif %}</h3>
-          {% if user %}
-          <p class="text-sm text-gray-400 mb-3">Leave blank to keep the current password.</p>
-          {% endif %}
+        <div class="p-6 space-y-5">
           <div class="grid grid-cols-2 gap-5">
             <div>
-              <label class="block text-sm font-medium text-gray-600 mb-1.5">Password {% if not user %}<span class="text-red-400">*</span>{% endif %}</label>
+              <label class="block text-sm font-medium text-gray-600 mb-1.5">Full name <span class="text-red-400">*</span></label>
               <input
-                type="password"
-                name="password"
-                {% if not user %}required{% endif %}
+                type="text"
+                name="full_name"
+                required
+                value="{{ user.full_name if user else '' }}"
+                placeholder="Jane Smith"
                 class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-gray-900"
               />
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-600 mb-1.5">Confirm password {% if not user %}<span class="text-red-400">*</span>{% endif %}</label>
+              <label class="block text-sm font-medium text-gray-600 mb-1.5">Email <span class="text-red-400">*</span></label>
               <input
-                type="password"
-                name="confirm_password"
-                {% if not user %}required{% endif %}
-                class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-gray-900"
+                type="email"
+                name="email"
+                required
+                value="{{ user.email if user else '' }}"
+                placeholder="jane@example.com"
+                {% if user %}readonly class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-base bg-gray-50 text-gray-500"{% else %}class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-gray-900"{% endif %}
               />
+              {% if user %}<p class="text-sm text-gray-400 mt-1">Email cannot be changed.</p>{% endif %}
             </div>
           </div>
+
+          <div class="grid grid-cols-2 gap-5">
+            <div>
+              <label class="block text-sm font-medium text-gray-600 mb-1.5">Role</label>
+              <select
+                name="role"
+                class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white"
+              >
+                <option value="staff" {% if user and user.role == 'staff' %}selected{% elif not user %}selected{% endif %}>Staff</option>
+                <option value="admin" {% if user and user.role == 'admin' %}selected{% endif %}>Admin</option>
+              </select>
+            </div>
+            {% if user %}
+            <div>
+              <label class="block text-sm font-medium text-gray-600 mb-1.5">Status</label>
+              <div class="flex items-center gap-2 mt-2">
+                <input
+                  type="checkbox"
+                  name="is_active"
+                  id="is_active"
+                  {% if user.is_active %}checked{% endif %}
+                  class="rounded"
+                />
+                <label for="is_active" class="text-base text-gray-600 cursor-pointer">Active</label>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+
+          {% if not user %}
+          <div class="border-t border-gray-100 pt-5">
+            <h3 class="text-base font-semibold mb-3">Password</h3>
+            <div class="grid grid-cols-2 gap-5">
+              <div>
+                <label class="block text-sm font-medium text-gray-600 mb-1.5">Password <span class="text-red-400">*</span></label>
+                <input
+                  type="password"
+                  name="password"
+                  required
+                  class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-gray-900"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-600 mb-1.5">Confirm password <span class="text-red-400">*</span></label>
+                <input
+                  type="password"
+                  name="confirm_password"
+                  required
+                  class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-gray-900"
+                />
+              </div>
+            </div>
+          </div>
+          {% endif %}
         </div>
 
-      </div>
-
-      <div class="mt-5 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <button
-            type="submit"
-            class="text-base font-medium bg-gray-900 text-white px-5 py-2.5 rounded-lg hover:bg-gray-700 transition-colors"
-          >
-            {% if user %}Save changes{% else %}Create user{% endif %}
+        <div class="border-t border-gray-100 px-6 py-4 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <button
+              type="submit"
+              class="text-base font-medium btn-brand px-5 py-2.5 rounded-xl transition-colors"
+            >
+              {% if user %}Save changes{% else %}Create user{% endif %}
+            </button>
+            <a href="/portal/staff/settings?tab=users" class="text-base text-gray-500 hover:text-gray-900">Cancel</a>
+          </div>
+          {% if user %}
+          <button type="button" onclick="deleteUser('{{ user.id }}', '{{ user.full_name | e }}')"
+                  class="text-sm text-red-400 hover:text-red-600">
+            Delete user
           </button>
-          <a href="/portal/staff/settings?tab=users" class="text-base text-gray-500 hover:text-gray-900">Cancel</a>
+          {% endif %}
         </div>
-        {% if user %}
-        <button type="button" onclick="deleteUser('{{ user.id }}', '{{ user.full_name | e }}')"
-                class="text-sm text-red-400 hover:text-red-600">
-          Delete user
-        </button>
-        {% endif %}
-      </div>
 
+      </div>
     </form>
+
+    {% if user %}
+    <!-- Password section -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm mt-6">
+      <div class="px-6 pt-6 pb-2">
+        <h3 class="text-base font-semibold">Change password</h3>
+        <p class="text-sm text-gray-400 mt-1">Set a new password for this user. They will need to use it on their next login.</p>
+      </div>
+      <div class="px-6 pb-6 pt-3">
+        <div class="grid grid-cols-2 gap-5">
+          <div>
+            <label class="block text-sm font-medium text-gray-600 mb-1.5">New password</label>
+            <input type="password" id="reset-pwd"
+                   class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-gray-900" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-600 mb-1.5">Confirm password</label>
+            <input type="password" id="reset-pwd-confirm"
+                   class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-gray-900" />
+          </div>
+        </div>
+        <div class="mt-4 flex items-center">
+          <button type="button" onclick="resetPassword()"
+                  class="text-sm font-medium btn-brand px-4 py-2 rounded-xl transition-colors">
+            Update password
+          </button>
+          <span id="reset-msg" class="ml-3 text-sm hidden"></span>
+        </div>
+      </div>
+    </div>
+    {% endif %}
 {% endblock %}
 
 {% block scripts %}
@@ -137,6 +168,40 @@
     const res = await fetch(`/portal/staff/users/${id}`, { method: 'DELETE' });
     if (res.ok) { window.location.href = '/portal/staff/settings?tab=users'; }
     else { const d = await res.json(); alert(d.error || 'Delete failed'); }
+  }
+
+  async function resetPassword() {
+    const pwd = document.getElementById('reset-pwd').value;
+    const confirm = document.getElementById('reset-pwd-confirm').value;
+    const msg = document.getElementById('reset-msg');
+    msg.classList.add('hidden');
+
+    if (!pwd || pwd.length < 6) {
+      msg.textContent = 'Password must be at least 6 characters.';
+      msg.className = 'ml-3 text-sm text-red-600';
+      return;
+    }
+    if (pwd !== confirm) {
+      msg.textContent = 'Passwords do not match.';
+      msg.className = 'ml-3 text-sm text-red-600';
+      return;
+    }
+
+    const res = await fetch('/portal/staff/users/{{ user.id }}/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pwd }),
+    });
+    if (res.ok) {
+      msg.textContent = 'Password reset successfully.';
+      msg.className = 'ml-3 text-sm text-green-600';
+      document.getElementById('reset-pwd').value = '';
+      document.getElementById('reset-pwd-confirm').value = '';
+    } else {
+      const d = await res.json();
+      msg.textContent = d.detail || 'Reset failed.';
+      msg.className = 'ml-3 text-sm text-red-600';
+    }
   }
 </script>
 {% endif %}

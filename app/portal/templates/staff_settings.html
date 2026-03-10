@@ -10,15 +10,15 @@
     <!-- Sub-tabs -->
     <div class="flex items-center gap-1">
       <a href="/portal/staff/settings"
-         class="text-sm px-4 py-2 rounded-lg {{ 'bg-gray-900 text-white' if tab == 'branding' else 'border border-gray-200 text-gray-600 hover:bg-gray-50' }}">
+         class="text-sm px-4 py-2 rounded-xl {{ 'bg-gray-900 text-white' if tab == 'branding' else 'border border-gray-200 text-gray-600 hover:bg-gray-50' }}">
         Branding
       </a>
       <a href="/portal/staff/settings?tab=users"
-         class="text-sm px-4 py-2 rounded-lg {{ 'bg-gray-900 text-white' if tab == 'users' else 'border border-gray-200 text-gray-600 hover:bg-gray-50' }}">
+         class="text-sm px-4 py-2 rounded-xl {{ 'bg-gray-900 text-white' if tab == 'users' else 'border border-gray-200 text-gray-600 hover:bg-gray-50' }}">
         Users
       </a>
       <a href="/portal/staff/settings?tab=email"
-         class="text-sm px-4 py-2 rounded-lg {{ 'bg-gray-900 text-white' if tab == 'email' else 'border border-gray-200 text-gray-600 hover:bg-gray-50' }}">
+         class="text-sm px-4 py-2 rounded-xl {{ 'bg-gray-900 text-white' if tab == 'email' else 'border border-gray-200 text-gray-600 hover:bg-gray-50' }}">
         Email
       </a>
     </div>
@@ -98,7 +98,7 @@
         <div class="mt-6 pt-5 border-t border-gray-100">
           <button
             type="submit"
-            class="text-base font-medium bg-gray-900 text-white px-5 py-2.5 rounded-lg hover:bg-gray-700 transition-colors"
+            class="text-base font-medium btn-brand px-5 py-2.5 rounded-xl transition-colors"
           >
             Save settings
           </button>
@@ -110,7 +110,7 @@
     <!-- Users tab -->
     <div class="flex items-center justify-between">
       <h2 class="text-lg font-semibold">Staff Users</h2>
-      <a href="/portal/staff/users/new" class="text-base font-medium bg-gray-900 text-white px-5 py-2.5 rounded-lg hover:bg-gray-700 transition-colors">
+      <a href="/portal/staff/users/new" class="text-base font-medium btn-brand px-5 py-2.5 rounded-xl transition-colors">
         Add User
       </a>
     </div>
@@ -129,7 +129,7 @@
         </thead>
         <tbody class="divide-y divide-gray-100">
           {% for u in users %}
-          <tr class="hover:bg-gray-50 transition-colors">
+          <tr class="hover:bg-gray-50 transition-colors cursor-pointer" onclick="window.location='/portal/staff/users/{{ u.id }}/edit'">
             <td class="px-5 py-4 font-medium">{{ u.full_name or "—" }}</td>
             <td class="px-5 py-4 text-gray-500">{{ u.email }}</td>
             <td class="px-5 py-4">
@@ -227,7 +227,7 @@
         <div class="mt-6 pt-5 border-t border-gray-100">
           <button
             type="submit"
-            class="text-base font-medium bg-gray-900 text-white px-5 py-2.5 rounded-lg hover:bg-gray-700 transition-colors"
+            class="text-base font-medium btn-brand px-5 py-2.5 rounded-xl transition-colors"
           >
             Save email settings
           </button>

@@ -133,41 +133,50 @@ async def logout():
 @router.get("/", response_class=HTMLResponse)
 async def staff_dashboard(
     request: Request,
+    scope: str = "all",
     staff: dict = Depends(require_staff),
     conn: asyncpg.Connection = Depends(get_conn),
 ):
+    tid = staff["tenant_id"]
+    mine = scope == "mine"
+    staff_filter = " AND r.created_by_staff_id = $2::uuid" if mine else ""
+    params: list = [tid]
+    if mine:
+        params.append(staff["id"])
+
     stats = await conn.fetchrow(
-        """
+        f"""
         SELECT
-            COUNT(*) FILTER (WHERE status NOT IN ('completed', 'closed')) AS open_count,
+            COUNT(*) FILTER (WHERE r.status NOT IN ('completed', 'closed')) AS open_count,
             COUNT(*) FILTER (
-                WHERE status NOT IN ('completed', 'closed')
-                AND due_at IS NOT NULL AND due_at < now()
+                WHERE r.status NOT IN ('completed', 'closed')
+                AND r.due_at IS NOT NULL AND r.due_at < now()
             ) AS overdue_count,
             COUNT(*) FILTER (
-                WHERE status = 'completed'
-                AND created_at >= now() - interval '7 days'
+                WHERE r.status = 'completed'
+                AND r.created_at >= now() - interval '7 days'
             ) AS completed_week
-        FROM portal.doc_requests
-        WHERE tenant_id = $1::uuid
+        FROM portal.doc_requests r
+        WHERE r.tenant_id = $1::uuid{staff_filter}
         """,
-        staff["tenant_id"],
+        *params,
     )
 
     awaiting = await conn.fetchval(
-        """
+        f"""
         SELECT COUNT(DISTINCT ri.request_id)
         FROM portal.doc_request_items ri
         JOIN portal.doc_requests r ON r.id = ri.request_id
         WHERE ri.tenant_id = $1::uuid
           AND ri.status = 'uploaded'
           AND r.status NOT IN ('completed', 'closed')
+          {staff_filter}
         """,
-        staff["tenant_id"],
+        *params,
     )
 
     recent = await conn.fetch(
-        """
+        f"""
         SELECT r.id, r.status::text AS status, r.due_at, r.created_at,
                r.last_viewed_at, r.sent_at,
                c.full_name AS client_name, c.email AS client_email,
@@ -183,22 +192,71 @@ async def staff_dashboard(
               SELECT 1 FROM portal.doc_request_items ri2
               WHERE ri2.request_id = r.id AND ri2.status = 'uploaded'
           )
+          {staff_filter}
         GROUP BY r.id, r.status, r.due_at, r.created_at, r.last_viewed_at,
                  r.sent_at, c.full_name, c.email
         ORDER BY r.created_at DESC
         LIMIT 5
         """,
-        staff["tenant_id"],
+        *params,
     )
 
-    brand = await get_tenant_brand(conn, staff["tenant_id"])
+    # Activity feed — last 10 audit events across the tenant
+    activity = await conn.fetch(
+        """
+        SELECT ae.event_type, ae.actor, ae.metadata, ae.event_time,
+               COALESCE(su.full_name, 'Client') AS actor_name,
+               cl.full_name AS client_name
+        FROM portal.audit_events ae
+        LEFT JOIN portal.staff_users su
+            ON ae.actor = 'staff' AND ae.actor_id = su.id::text
+        LEFT JOIN portal.doc_requests dr ON ae.request_id = dr.id
+        LEFT JOIN portal.clients cl ON dr.client_id = cl.id
+        WHERE ae.tenant_id = $1::uuid
+        ORDER BY ae.event_time DESC
+        LIMIT 10
+        """,
+        tid,
+    )
+
+    # Stale requests — sent 7+ days ago, never viewed
+    stale_count = await conn.fetchval(
+        """
+        SELECT COUNT(*)
+        FROM portal.doc_requests
+        WHERE tenant_id = $1::uuid
+          AND status = 'sent'
+          AND sent_at < now() - interval '7 days'
+          AND last_viewed_at IS NULL
+        """,
+        tid,
+    )
+
+    # Average client response time (sent → first view)
+    avg_response = await conn.fetchval(
+        """
+        SELECT ROUND(EXTRACT(EPOCH FROM AVG(last_viewed_at - sent_at)) / 3600.0, 1)
+        FROM portal.doc_requests
+        WHERE tenant_id = $1::uuid
+          AND sent_at IS NOT NULL
+          AND last_viewed_at IS NOT NULL
+        """,
+        tid,
+    )
+
+    brand = await get_tenant_brand(conn, tid)
     return templates.TemplateResponse("staff_dashboard.html", {
         "request": request,
         "staff": staff,
         "brand": brand,
+        "scope": scope,
         "stats": dict(stats),
         "awaiting_review": awaiting or 0,
         "recent": [dict(r) for r in recent],
+        "activity": [dict(a) for a in activity],
+        "stale_count": stale_count or 0,
+        "avg_response_hours": float(avg_response) if avg_response else None,
+        "now": datetime.now(timezone.utc),
     })
 
 
@@ -1257,35 +1315,47 @@ async def bulk_action(
 @router.get("/requests", response_class=HTMLResponse)
 async def staff_requests(
     request: Request,
-    status: Optional[str] = None,
     q: Optional[str] = None,
+    users: Optional[str] = None,
+    filters: Optional[str] = None,
     staff: dict = Depends(require_staff),
     conn: asyncpg.Connection = Depends(get_conn),
 ):
     conditions = ["r.tenant_id = $1::uuid"]
     params: list = [staff["tenant_id"]]
 
-    if status == "open":
-        conditions.append("r.status NOT IN ('completed', 'closed')")
-    elif status == "awaiting_review":
-        conditions.append(
+    # Parse comma-separated filter tags
+    active_filters = set()
+    if filters:
+        active_filters = {f.strip() for f in filters.split(",") if f.strip()}
+
+    # User filter (comma-separated UUIDs)
+    active_user_ids: list[str] = []
+    if users:
+        active_user_ids = [u.strip() for u in users.split(",") if u.strip()]
+        placeholders = ", ".join(
+            f"${len(params) + i + 1}::uuid" for i in range(len(active_user_ids))
+        )
+        params.extend(active_user_ids)
+        conditions.append(f"r.created_by_staff_id IN ({placeholders})")
+
+    # Status filters (can combine)
+    status_parts = []
+    if "open" in active_filters:
+        status_parts.append("r.status NOT IN ('completed', 'closed')")
+    if "closed" in active_filters:
+        status_parts.append("r.status IN ('completed', 'closed')")
+    if "review" in active_filters:
+        status_parts.append(
             "EXISTS (SELECT 1 FROM portal.doc_request_items ri2 "
             "WHERE ri2.request_id = r.id AND ri2.status = 'uploaded')"
         )
-    elif status == "overdue":
-        conditions.append(
-            "r.due_at < now() AND r.status NOT IN ('completed', 'closed')"
+    if "overdue" in active_filters:
+        status_parts.append(
+            "(r.due_at < now() AND r.status NOT IN ('completed', 'closed'))"
         )
-    elif status == "closed":
-        # "Closed" tab shows both completed and closed requests
-        conditions.append("r.status IN ('completed', 'closed')")
-    elif status == "mine":
-        params.append(staff["staff_id"])
-        conditions.append(f"r.created_by_staff_id = ${len(params)}::uuid")
-    elif status in ("draft", "sent", "viewed", "in_progress", "submitted",
-                     "completed"):
-        params.append(status)
-        conditions.append(f"r.status = ${len(params)}::public.request_status")
+    if status_parts:
+        conditions.append(f"({' OR '.join(status_parts)})")
 
     if q and q.strip():
         params.append(f"%{q.strip()}%")
@@ -1322,13 +1392,22 @@ async def staff_requests(
         d["last_viewed_rel"] = _relative_time(r["last_viewed_at"])
         requests_out.append(d)
 
+    # Load staff users for the filter dropdown
+    staff_users = await conn.fetch(
+        "SELECT id::text, full_name FROM portal.staff_users "
+        "WHERE tenant_id = $1::uuid AND is_active = true ORDER BY full_name",
+        staff["tenant_id"],
+    )
+
     brand = await get_tenant_brand(conn, staff["tenant_id"])
     return templates.TemplateResponse("staff_list.html", {
         "request": request,
         "requests": requests_out,
         "staff": staff,
         "brand": brand,
-        "active_status": status or "",
+        "staff_users": [dict(u) for u in staff_users],
+        "active_filters": active_filters,
+        "active_user_ids": active_user_ids,
         "q": q or "",
         "now": datetime.now(timezone.utc),
     })
@@ -1858,6 +1937,44 @@ async def delete_template(
     await conn.execute(
         "DELETE FROM portal.templates WHERE id = $1::uuid AND tenant_id = $2::uuid",
         template_id, staff["tenant_id"],
+    )
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Reset password: Staff Users
+# ---------------------------------------------------------------------------
+
+@router.post("/users/{user_id}/reset-password")
+async def reset_user_password(
+    user_id: str,
+    body: dict = Body(...),
+    staff: dict = Depends(require_admin),
+    conn: asyncpg.Connection = Depends(get_conn),
+):
+    """Admin resets another user's password."""
+    password = body.get("password", "").strip()
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    user = await conn.fetchrow(
+        "SELECT id FROM portal.staff_users WHERE id = $1::uuid AND tenant_id = $2::uuid",
+        user_id, staff["tenant_id"],
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    await conn.execute(
+        "UPDATE portal.staff_users SET password_hash = $1 WHERE id = $2::uuid",
+        hash_password(password), user_id,
+    )
+    await log_audit(
+        conn,
+        tenant_id=staff["tenant_id"],
+        event_type="password_reset",
+        actor="staff",
+        actor_id=staff["staff_id"],
+        metadata={"target_user_id": user_id, "reset_by": staff["full_name"]},
     )
     return {"ok": True}
 

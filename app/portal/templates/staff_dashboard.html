@@ -3,18 +3,34 @@
 {% block nav_active %}dashboard{% endblock %}
 
 {% block content %}
+  {% set bc = brand.brand_color or '#111827' %}
+
+  <!-- Scope toggle + heading -->
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-semibold">Dashboard</h1>
+    <div class="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
+      <a href="/portal/staff/?scope=all"
+         class="text-sm px-4 py-1.5 rounded-lg font-medium transition-colors {{ 'bg-white shadow-sm text-gray-900' if scope != 'mine' else 'text-gray-500 hover:text-gray-700' }}">
+        All
+      </a>
+      <a href="/portal/staff/?scope=mine"
+         class="text-sm px-4 py-1.5 rounded-lg font-medium transition-colors {{ 'bg-white shadow-sm text-gray-900' if scope == 'mine' else 'text-gray-500 hover:text-gray-700' }}">
+        Mine
+      </a>
+    </div>
+  </div>
 
   <!-- Stat cards -->
   <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-    <a href="/portal/staff/requests?status=open" class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 hover:border-gray-300 transition-colors">
+    <a href="/portal/staff/requests?filters=open" class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 hover:border-gray-300 transition-colors">
       <p class="text-4xl font-semibold">{{ stats.open_count or 0 }}</p>
       <p class="text-base text-gray-500 mt-1">Open requests</p>
     </a>
-    <a href="/portal/staff/requests?status=awaiting_review" class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 hover:border-gray-300 transition-colors">
+    <a href="/portal/staff/requests?filters=review" class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 hover:border-gray-300 transition-colors">
       <p class="text-4xl font-semibold {% if awaiting_review > 0 %}text-amber-600{% endif %}">{{ awaiting_review }}</p>
       <p class="text-base text-gray-500 mt-1">Awaiting review</p>
     </a>
-    <a href="/portal/staff/requests?status=overdue" class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 hover:border-gray-300 transition-colors">
+    <a href="/portal/staff/requests?filters=overdue" class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 hover:border-gray-300 transition-colors">
       <p class="text-4xl font-semibold {% if stats.overdue_count > 0 %}text-red-600{% endif %}">{{ stats.overdue_count or 0 }}</p>
       <p class="text-base text-gray-500 mt-1">Overdue</p>
     </a>
@@ -24,69 +40,145 @@
     </div>
   </div>
 
-  <!-- Needs review -->
-  <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-    <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-      <h2 class="text-base font-semibold">Needs review</h2>
-      <a href="/portal/staff/requests?status=awaiting_review" class="text-sm text-gray-400 hover:text-gray-900">View all</a>
+  <!-- Two-column layout -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- Left: Needs review (2/3) -->
+    <div class="lg:col-span-2">
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h2 class="text-base font-semibold">Needs review</h2>
+          <a href="/portal/staff/requests?filters=review" class="text-sm text-gray-400 hover:text-gray-900">View all</a>
+        </div>
+
+        {% if not recent %}
+        <div class="px-6 py-12 text-center">
+          <i data-lucide="check-circle" class="w-10 h-10 text-gray-200 mx-auto mb-2"></i>
+          <p class="text-base text-gray-400">Nothing to review</p>
+        </div>
+        {% else %}
+        <table class="w-full text-base">
+          <thead>
+            <tr class="border-b border-gray-100 bg-gray-50 text-left">
+              <th class="px-6 py-3 font-medium text-sm text-gray-500">Client</th>
+              <th class="px-6 py-3 font-medium text-sm text-gray-500">Progress</th>
+              <th class="px-6 py-3 font-medium text-sm text-gray-500">Due</th>
+              <th class="px-6 py-3 w-10"></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for r in recent %}
+            <tr class="hover:bg-gray-50 transition-colors cursor-pointer"
+                onclick="window.location='/portal/staff/requests/{{ r.id }}'">
+              <td class="px-6 py-4">
+                <p class="font-medium">{{ r.client_name or "—" }}</p>
+                <p class="text-sm text-gray-400">{{ r.client_email or "" }}</p>
+              </td>
+              <td class="px-6 py-4">
+                <div class="flex items-center gap-2">
+                  <div class="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden max-w-[100px]">
+                    <div class="h-2 rounded-full" style="background-color: {{ bc }}; width: {% if r.item_total > 0 %}{{ (r.item_done / r.item_total * 100) | round }}{% else %}0{% endif %}%"></div>
+                  </div>
+                  <span class="text-sm text-gray-500">{{ r.item_done }}/{{ r.item_total }}</span>
+                </div>
+                {% if r.item_awaiting > 0 %}
+                <p class="text-sm text-amber-600 font-medium mt-0.5">{{ r.item_awaiting }} to review</p>
+                {% endif %}
+              </td>
+              <td class="px-6 py-4 text-gray-500">
+                {% if r.due_at %}
+                  {% if r.due_at < now and r.status not in ['completed', 'closed'] %}
+                    <span class="text-sm font-medium text-red-600">{{ r.due_at.strftime("%d %b") }}</span>
+                  {% else %}
+                    {{ r.due_at.strftime("%d %b") }}
+                  {% endif %}
+                {% else %}—{% endif %}
+              </td>
+              <td class="px-6 py-4">
+                <i data-lucide="chevron-right" class="w-5 h-5 text-gray-300"></i>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+      </div>
     </div>
 
-    {% if not recent %}
-    <div class="px-6 py-8 text-center text-base text-gray-400">
-      Nothing to review.
+    <!-- Right: Sidebar cards (1/3) -->
+    <div class="space-y-6">
+
+      <!-- Stale requests alert -->
+      {% if stale_count > 0 %}
+      <div class="bg-amber-50 border border-amber-200 rounded-xl p-5">
+        <div class="flex items-start gap-3">
+          <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5"></i>
+          <div>
+            <p class="text-sm font-semibold text-amber-800">{{ stale_count }} stale request{{ 's' if stale_count != 1 }}</p>
+            <p class="text-sm text-amber-600 mt-0.5">Sent 7+ days ago and never opened by the client.</p>
+            <a href="/portal/staff/requests?filters=open" class="text-sm font-medium text-amber-700 hover:text-amber-900 mt-2 inline-block">View requests &rarr;</a>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Response time insight -->
+      {% if avg_response_hours is not none %}
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <p class="text-sm text-gray-500 mb-1">Avg. client response</p>
+        <p class="text-2xl font-semibold">
+          {% if avg_response_hours < 1 %}
+            {{ (avg_response_hours * 60) | round | int }} min
+          {% elif avg_response_hours < 48 %}
+            {{ avg_response_hours | round(1) }} hrs
+          {% else %}
+            {{ (avg_response_hours / 24) | round(1) }} days
+          {% endif %}
+        </p>
+        <p class="text-xs text-gray-400 mt-1">Time from sending to first client view</p>
+      </div>
+      {% endif %}
+
+      <!-- Activity feed -->
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-4 border-b border-gray-100">
+          <h2 class="text-sm font-semibold">Recent activity</h2>
+        </div>
+        {% if not activity %}
+        <div class="px-5 py-6 text-center">
+          <p class="text-sm text-gray-400">No activity yet</p>
+        </div>
+        {% else %}
+        <div class="divide-y divide-gray-50">
+          {% for evt in activity %}
+          <div class="px-5 py-3">
+            <p class="text-sm text-gray-700">
+              <span class="font-medium">{{ evt.actor_name }}</span>
+              {% if evt.event_type == 'item_approved' %} approved an item
+              {% elif evt.event_type == 'item_rejected' %} rejected an item
+              {% elif evt.event_type == 'request_completed' %} completed a request
+              {% elif evt.event_type == 'request_closed' %} closed a request
+              {% elif evt.event_type == 'request_reopened' %} reopened a request
+              {% elif evt.event_type == 'magic_link_emailed' %} emailed a link
+              {% elif evt.event_type == 'access_link_created' %} generated a link
+              {% elif evt.event_type == 'client_viewed' %} viewed the request
+              {% elif evt.event_type == 'file_uploaded' %} uploaded a file
+              {% elif evt.event_type == 'zones_submitted' %} submitted a document
+              {% elif evt.event_type == 'password_changed' %} changed their password
+              {% else %} {{ evt.event_type | replace("_", " ") }}
+              {% endif %}
+            </p>
+            <p class="text-xs text-gray-400 mt-0.5">
+              {% if evt.client_name %}{{ evt.client_name }} &middot; {% endif %}
+              {{ evt.event_time.strftime("%d %b, %H:%M") }}
+            </p>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
     </div>
-    {% else %}
-    <table class="w-full text-base">
-      <thead>
-        <tr class="border-b border-gray-100 bg-gray-50 text-left">
-          <th class="px-6 py-3 font-medium text-sm text-gray-500">Client</th>
-          <th class="px-6 py-3 font-medium text-sm text-gray-500">Status</th>
-          <th class="px-6 py-3 font-medium text-sm text-gray-500">Progress</th>
-          <th class="px-6 py-3 font-medium text-sm text-gray-500">Due</th>
-          <th class="px-6 py-3"></th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-gray-100">
-        {% for r in recent %}
-        <tr class="hover:bg-gray-50 transition-colors">
-          <td class="px-6 py-4">
-            <p class="font-medium">{{ r.client_name or "—" }}</p>
-            <p class="text-sm text-gray-400">{{ r.client_email or "" }}</p>
-          </td>
-          <td class="px-6 py-4">
-            {% set s = r.status %}
-            {% if s == "draft" %}
-              <span class="inline-flex items-center px-2.5 py-1 rounded-lg text-sm font-medium bg-gray-100 text-gray-600">Draft</span>
-            {% elif s == "sent" %}
-              <span class="inline-flex items-center px-2.5 py-1 rounded-lg text-sm font-medium bg-blue-50 text-blue-700">Sent</span>
-            {% elif s == "viewed" %}
-              <span class="inline-flex items-center px-2.5 py-1 rounded-lg text-sm font-medium bg-indigo-50 text-indigo-700">Viewed</span>
-            {% else %}
-              <span class="inline-flex items-center px-2.5 py-1 rounded-lg text-sm font-medium bg-gray-100 text-gray-600">{{ s }}</span>
-            {% endif %}
-          </td>
-          <td class="px-6 py-4">
-            <div class="flex items-center gap-2">
-              <div class="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden max-w-[100px]">
-                <div class="h-2 bg-green-500 rounded-full" style="width: {% if r.item_total > 0 %}{{ (r.item_done / r.item_total * 100) | round }}{% else %}0{% endif %}%"></div>
-              </div>
-              <span class="text-sm text-gray-500">{{ r.item_done }}/{{ r.item_total }}</span>
-            </div>
-            {% if r.item_awaiting > 0 %}
-            <p class="text-sm text-amber-600 font-medium mt-0.5">{{ r.item_awaiting }} to review</p>
-            {% endif %}
-          </td>
-          <td class="px-6 py-4 text-gray-500">
-            {% if r.due_at %}{{ r.due_at.strftime("%d %b") }}{% else %}—{% endif %}
-          </td>
-          <td class="px-6 py-4 text-right">
-            <a href="/portal/staff/requests/{{ r.id }}" class="text-sm font-medium text-gray-900 hover:underline">View</a>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% endif %}
   </div>
 
 {% endblock %}

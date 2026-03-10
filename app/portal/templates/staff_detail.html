@@ -42,7 +42,7 @@
           <button
             id="sendEmailBtn"
             onclick="sendEmail()"
-            class="text-base font-medium bg-gray-900 text-white px-5 py-2.5 rounded-lg hover:bg-gray-700 transition-colors"
+            class="text-base font-medium btn-brand px-5 py-2.5 rounded-xl transition-colors"
           >
             Send to client
           </button>
@@ -50,14 +50,14 @@
           <button
             id="copyLinkBtn"
             onclick="generateLink()"
-            class="text-base font-medium bg-gray-900 text-white px-5 py-2.5 rounded-lg hover:bg-gray-700 transition-colors"
+            class="text-base font-medium btn-brand px-5 py-2.5 rounded-xl transition-colors"
           >
             Copy link
           </button>
           {% endif %}
           <button
             onclick="closeRequest('close')"
-            class="text-base font-medium border border-gray-300 text-gray-600 px-5 py-2.5 rounded-lg hover:bg-gray-50 transition-colors"
+            class="text-base font-medium border border-gray-200 text-gray-600 px-5 py-2.5 rounded-xl hover:bg-gray-50 transition-colors"
           >
             Close
           </button>
@@ -463,7 +463,11 @@
 
     function copyLink() {
       const input = document.getElementById('linkValue');
+      const btn = event.currentTarget;
       navigator.clipboard.writeText(input.value);
+      btn.textContent = 'Copied!';
+      btn.classList.add('text-green-600');
+      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('text-green-600'); }, 2000);
     }
 
     function closeModal() {
