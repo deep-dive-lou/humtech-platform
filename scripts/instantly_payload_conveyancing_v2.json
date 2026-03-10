@@ -1,0 +1,176 @@
+{
+  "sequences": [
+    {
+      "steps": [
+        {
+          "type": "email",
+          "delay": 0,
+          "variants": [
+            {
+              "subject": "{{companyName}} AI Diagnosis tool for {{firstName}}",
+              "body": "<div>Hi {{firstName}}, </div><div><br /></div><div>{{personalization}} </div><div><br /></div><div>I wondered if {{companyName}} has an AI strategy in place? </div><div><br /></div><div>You can use our free <a href=\"https://humtech.ai/free-ai-diagnostic\">AI Diagnostic</a> <a href=\"https://humtech.ai/free-ai-diagnostic\">here</a> to check if various AI systems might benefit {{companyName}} specifically, if you don't already have them in place. </div><div><br /></div><div>The assessment estimates potential revenue loss where key AI processes are not present, and provides a qualitative readout to detail how you might fix any problems identified by the assessment internally. </div><div><br /></div><div>The output is helpful even if you don't use our service: it highlights important areas to review across multiple domains, with recommendations tailored to your responses in a handy PDF which can be shared within your organisation. </div><div><br /></div><div>If you find it useful, I'd be happy to walk you through the output, if not, I hope it helps in some way. </div><div><br /></div><div>Best wishes, </div><div><br /></div><div>{{accountSignature}} </div>"
+            }
+          ],
+          "delay_unit": "days",
+          "pre_delay_unit": "days"
+        },
+        {
+          "type": "email",
+          "delay": 3,
+          "variants": [
+            {
+              "subject": "The #1 ad agency on Trust Pilot. You can check. {{companyName}} revenue increase with AI, zero cost",
+              "body": "<div>Hi {{firstName}}, </div><div><br /></div><div>Our brand RESG has been the UK's #1 Advertising Agency on Trust Pilot since 2023. So what's our secret?</div><div><br /></div><div>We use our custom-built neural network AI system, so it's impossible for businesses to compete with our lead conversion rates. We're the only ones doing it, that's why we're on top. </div><div><br /></div><div>If you'd like to see if we can roll this out for {{companyName}}, use our <a href=\"https://humtech.ai/free-ai-diagnostic\">Free Diagnostic Tool</a></div><div><br /></div><div>Even smaller SMEs discover £200k+ revenue leakage hiding in plain sight. It's possible to have great P+L/margins and still be leaving a fortune on the table. If you're eager not to lose out to the competition in 2026 as they inevitably roll out AI acquisition and conversion models like ours, complete our diagnostic and we'll see if we can help. </div><div><br /></div><div>Zero retainers, only pay if you win. </div><div><br /></div><div>Best wishes, </div><div>{{accountSignature}} </div>"
+            }
+          ],
+          "delay_unit": "days",
+          "pre_delay_unit": "days"
+        },
+        {
+          "type": "email",
+          "delay": 4,
+          "variants": [
+            {
+              "subject": "{{companyName}} – Conversion increase, zero cost",
+              "body": "<div>Hi {{firstName}}, </div><div><br /></div><div>Hope you had chance to run the <a href=\"https://humtech.ai/free-ai-diagnostic\">FREE AI Diagnostic</a>?</div><div><br /></div><div>AI agents mean tasks that would previously take days across departments are done in seconds. </div><div><br /></div><div>Most property and conveyancing firms like {{companyName}} discover significant revenue leakage hiding in plain sight. RESG UK increased revenue by 400% from 2023-2024 – the competition couldn't keep up.</div><div><br /></div><div>Quick question: when potential clients enquire about conveyancing services, what % convert to instructed matters? Our clients hit 34% improvement within 60 days… The gap? Advisors guessing scripts and performing repetitive tasks, instead of focusing on revenue generating tasks only. </div><div><br /></div><div>We've seen sales reps: </div><div>- Requesting docs and facilitating compliance </div><div>- Engaging leads which should have booked automatically </div><div>- Getting ghosted and losing motivation </div><div>- Missing KPI targets, blaming lead quality and engaging new leads too slowly</div><div>- Following outdated sales SOPs </div><div><br /></div><div>Our system fixes this automatically. No software swap. Just added revenue. </div><div><br /></div><div>Does pinning down your exact conversion gap interest you? </div><div><br /></div><div>Best wishes,</div><div>{{accountSignature}} </div>"
+            }
+          ],
+          "delay_unit": "days",
+          "pre_delay_unit": "days"
+        },
+        {
+          "type": "email",
+          "delay": 4,
+          "variants": [
+            {
+              "subject": "{{companyName}}: 98% sales appointment attendance / 56% rev increase",
+              "body": "<div>Hi {{firstName}}, </div><div><br /></div><div>Quick case study from high-volume outbound sales agency RESG UK:</div><div><br /></div><div>- Only 10-15% of leads scheduled appointments through manual outreach </div><div>- Around 50% appointment attendance on a good month </div><div>- Sales team wasting time on engagement outreach plus manual admin </div><div>- Zero martech for multivariate testing and statistical analysis </div><div><br /></div><div>Result: </div><div>- 80%+ automated booking rate </div><div>- 98% appointment attendance </div><div>- 40% revenue increase </div><div>- 15hrs saved/rep/week </div><div>- 50% reduced customer acquisition cost in 14 days</div><div><br /></div><div>\"HumTech's system found revenue we didn't know was missing\" - CFO </div><div><br /></div><div>AI spots patterns humans miss… </div><div><br /></div><div>Takes 3 weeks to deploy over your CRM and current systems. </div><div><br /></div><div>It's best to complete the diagnostic <a href=\"https://humtech.ai/free-ai-diagnostic\">here</a> to make sure we're a good fit first.</div><div><br /></div><div>Then you can use our AI to schedule a call. Zero retainers, only pay if you win. </div><div><br /></div><div>Best wishes, </div><div>{{accountSignature}} </div>"
+            }
+          ],
+          "delay_unit": "days",
+          "pre_delay_unit": "days"
+        },
+        {
+          "type": "email",
+          "delay": 5,
+          "variants": [
+            {
+              "subject": "{{firstName}} – We became #1 Trustpilot Advertising Agency, as an AI agency…",
+              "body": "<div>Hi {{firstName}}, </div><div><br /></div><div>Most firms chase AI shiny objects. Winners deploy proven revenue engines. </div><div><br /></div><div>In 24 months, our AI Revenue Engine: </div><div><br /></div><div>- Built #1 rated Advertising Agency on Trustpilot (4.9/5.0 stars) </div><div>- Powered #4 rated Green Energy Supplier </div><div>- Utilised a team of just 4 people </div><div>– no big payroll, custom built agents do everything </div><div><br /></div><div>They didn't swap CRM. Didn't hire data scientists. Just layered our system over existing ops and let us do the heavy lifting. </div><div><br /></div><div>Result: 380% revenue increase Year 1. Paid from results only. </div><div><br /></div><div>Curious how #1 Trustpilot firms operationalize AI? </div><div><br /></div><div>Takes 3 minutes to find out: <a rel=\"noopener noreferrer\" href=\"https://humtech.ai/free-ai-diagnostic\">Test your AI Readiness Here</a><br /><br />Best wishes, </div><div><br /></div><div>{{accountSignature}} </div>"
+            }
+          ],
+          "delay_unit": "days",
+          "pre_delay_unit": "days"
+        },
+        {
+          "type": "email",
+          "delay": 7,
+          "variants": [
+            {
+              "subject": "{{firstName}} – how many hours do advisors waste on admin?",
+              "body": "<div>Hi {{firstName}}, </div><div><br /></div><div>What % of your team's day goes to manual data entry, follow-ups, and chasing? </div><div><br /></div><div>Industry average: 4.2 hours/day per rep. That's 1,100 hours/year per advisor lost to admin drudgery. </div><div><br /></div><div>Do the maths – hourly rate x 1,100 x total staff = shock horror!</div><div><br /></div><div>This is almost always 6 figures annually for high volume SME's. </div><div><br /></div><div>Our automation + time deflection system handles this at no cost. Advisors focus 100% on closing. </div><div><br /></div><div>Result: 2-4 extra hours/day per rep = £187k avg. capacity increase Year 1. Zero software swap. </div><div><br /></div><div>Does automating the busywork sound worth a conversation? </div><div><br /></div><div>Use our free diagnostic calculator and share the results with your colleagues: <a href=\"https://humtech.ai/free-ai-diagnostic\">here</a> </div><div><br /></div><div>Zero retainers, only pay if you win. </div><div><br /></div><div>Best wishes, </div><div>{{accountSignature}} </div>"
+            }
+          ],
+          "delay_unit": "days",
+          "pre_delay_unit": "days"
+        },
+        {
+          "type": "email",
+          "delay": 7,
+          "variants": [
+            {
+              "subject": "{{firstName}} – \"if you don't measure it, you can't manage it\"",
+              "body": "<div>Hi {{firstName}}, </div><div><br /></div><div>\"If you don't measure it, you can't manage it.\" and \"you don't know what you don't know\" are our mantras. </div><div><br /></div><div>We've seen so many firms miss the silent killers which eat profits like termites eat wood – you probably don't even see them! </div><div><br /></div><div>Here's a small sample: </div><div><br /></div><div>Time-to-lead engagement: how fast you conversationally engage (more than 1hr = 67% fewer conversions) </div><div>Lead Velocity Rate: Speed of leads moving from initial contact to qualified opportunity </div><div>Pipeline Coverage Ratio: Ratio of pipeline value to sales quota </div><div>Sales Cycle Length: Average days from lead to close </div><div><br /></div><div>There are many more, and missing just one vital stat leaves a big hole in your bucket. Our Clarity Engine tracks EVERY vital metric automatically, and in one place. </div><div><br /></div><div>What you fix: Advisor bottlenecks, process leaks, revenue gaps. </div><div>Result: MASSIVE close rate lift from metrics you didn't know existed. </div><div><br /></div><div>Does seeing your hidden conversion gaps interest you? </div><div><br /></div><div>Find out if it might work for you here: <a href=\"https://humtech.ai/free-ai-diagnostic\">Diagnose My Business</a> </div><div><br /></div><div>Takes less than 3 minutes - Get immediate results - Completely free.  </div><div><br /></div><div>Best wishes, </div><div>{{accountSignature}} </div>"
+            }
+          ],
+          "delay_unit": "days",
+          "pre_delay_unit": "days"
+        },
+        {
+          "type": "email",
+          "delay": 7,
+          "variants": [
+            {
+              "subject": "{{firstName}} - eliminate document request risk, increase adherence",
+              "body": "<div>Hi {{firstName}}, </div><div><br /></div><div>Quick risk question for {{companyName}}: when clients email sensitive docs, what happens if they fat-finger the address? </div><div><br /></div><div>GDPR/ICO reality: Wrong recipient = £20M fine risk (E.g. British Airways in 2020). </div><div><br /></div><div>Email chains also fail \"secure processing\" audits. Most \"docu-sign\" portals claim compliance but store on US servers – not UK data protection territory.</div><div><br /></div><div>Add generic branding into the mix and you have zero trust, and poor response rates (lots of chasing). </div><div><br /></div><div>Our Branded Document Request Portal fixes this: </div><div>- UK servers only </div><div>– ICO/GDPR bulletproof </div><div>- Your logo/domain (you actually OWN it)</div><div>– client trust goes up, and so does response rate </div><div>- Auto chases late documents so your team don't have to </div><div>- docs auto-delete post-processing </div><div>- Audit trail – every upload tracked </div><div><br /></div><div>Result: Zero compliance risk + 47% faster client onboarding (no back-and-forth) and 40% increase in adherence. </div><div><br /></div><div>Does client doc security + speed interest you? Reach out to book a quick call or use our <a href=\"https://humtech.ai/free-ai-diagnostic\">FREE AI Diagnostic</a> to see if there's a good use case for {{companyName}}</div><div><br /></div><div>Best wishes, </div><div>{{accountSignature}} </div>"
+            }
+          ],
+          "delay_unit": "days",
+          "pre_delay_unit": "days"
+        },
+        {
+          "type": "email",
+          "delay": 6,
+          "variants": [
+            {
+              "subject": "{{firstName}} - No longer \"the big that beats the small\" it's \"the fast that runs over the slow\"",
+              "body": "<div>Hi {{firstName}}, </div><div><br /></div><div>It's no longer \"the big that beats the small\" it's \"the fast that runs over the slow\" </div><div><br /></div><div>Engagement Latency: The time gap between customer interest and your business's meaningful response. </div><div><br /></div><div>Your competition are already closing this gap with AI. If you don't program instantaneous conversational AI agents by phone/SMS/Email, you're invisible… </div><div><br /></div><div><strong>That lead who reached out on a Sunday or 9pm at night? Your competitor's system picked them up and closed the sale before you're even back in the office. </strong></div><div><br /></div><div>Speed is now the ultimate currency and 'lead response latency' is the difference between closing a deal and losing it to a competitor who instantly responds. Most companies believe buying updated software fixes this, but they lack the adaptive ecosystem to make it work. You have the tools... but not the strategy. </div><div><br /></div><div>Our team measures and optimizes: </div><div>1. Engagement Latency </div><div>2. Handling Time vs. Deflection Savings </div><div>3. Opportunity Cost </div><div><br /></div><div>Sounds like it should be expensive, but our system works so well that you only pay if we increase your revenue. </div><div><br /></div><div>Run your engagement figures through our <a href=\"https://humtech.ai/free-ai-diagnostic\">FREE AI Diagnostic</a> to find out how much money you're losing to latency: </div><div><br /></div><div>Best wishes,</div><div>{{accountSignature}} </div>"
+            }
+          ],
+          "delay_unit": "days",
+          "pre_delay_unit": "days"
+        },
+        {
+          "type": "email",
+          "delay": 7,
+          "variants": [
+            {
+              "subject": "{{firstName}} – are vague leads killing your close rates?",
+              "body": "<div>Hi {{firstName}}, </div><div><br /></div><div>Did you know that most marketing agencies focus on stats like 'cost per lead'. Often the cheapest leads have the poorest impact on overall revenue. Agencies bragging about low lead costs and volume is great, but how many of them actually BOUGHT? </div><div><br /></div><div>If your marketing strategy does this, and uses out of date A/B split testing, we should book a call. </div><div><br /></div><div>It's vital to measure the downstream revenue impact of your strategies (i.e. which ads make the most money?) rather than basic basic online platform metrics.</div><div><br /></div><div>AI multivariate testing is the future. If you're not testing a high number of messaging and creative options every week, and their impact on actual revenue, your competition will be in no time. </div><div><br /></div><div>Our system fixes this automatically: </div><div>- Martech multivariate (not A/B split testing!) across landing pages, forms, CTAs, AI agent comms</div><div>- Conversion modules → pixel data to ad platforms (right avatar = 3x ROAS) </div><div>- AI agents + creative optimization (tested vs your current set up) </div><div>- Integrates over existing CRM, no upheaval </div><div><br /></div><div>Does dialling in your ad→close funnel interest you? </div><div><a href=\"https://humtech.ai/free-ai-diagnostic\">see if it will work for your business</a></div><div><br /></div><div>Best wishes, </div><div>{{accountSignature}} </div>"
+            }
+          ],
+          "delay_unit": "days",
+          "pre_delay_unit": "days"
+        },
+        {
+          "type": "email",
+          "delay": 14,
+          "variants": [
+            {
+              "subject": "{{firstName}} – your custom AI Revenue Engine, Done for You?",
+              "body": "<div>Hi {{firstName}}, </div><div><br /></div><div>\"Companies that will succeed will be the ones that most effectively use AI. If you're making maximum use of AI and competing against someone who isn't, you will win.\" – Elon Musk </div><div><br /></div><div>Most AI vendors sell \"boxes\". We build your custom AI Revenue Engine – diagnosed, deployed, optimised by senior specialists. </div><div><br /></div><div>Our 5-step process (used by #1 Trustpilot firms): </div><div>1. Baseline Assessment – gap audit </div><div>2. Strategic Direction and Roadmap – prioritise high revenue impacting opportunities </div><div>3. Layered Implementation – zero software swap, 3 weeks live </div><div>4. Go-Live Optimisation – conversion maximisation guaranteed </div><div>5. On-Demand Team – we run it, you profit </div><div><br /></div><div>Your multidisciplinary AI team, paid from results only. </div><div><br /></div><div>Does a custom revenue engine interest you? </div><div><br /></div><div>Get your <a href=\"https://humtech.ai/free-ai-diagnostic\">FREE AI Diagnostic PDF</a></div><div><br /></div><div>Best wishes, </div><div>{{accountSignature}} </div>"
+            }
+          ],
+          "delay_unit": "days",
+          "pre_delay_unit": "days"
+        },
+        {
+          "type": "email",
+          "delay": 2,
+          "variants": [
+            {
+              "subject": "{{firstName}} – 4 typical AI wins we layer onto your stack, zero cost",
+              "body": "<div>Hi {{firstName}}, </div><div><br /></div><div>AI isn't the future, it's already here, whether we like it or not. If we don't keep up, our competition will. AI agents are no longer a luxury, they're a necessity to stay relevant. </div><div><br /></div><div>We add these proven modules to your existing set up: </div><div><br /></div><div>- Agents/Conversational AI → faster qualification, higher conversion, lower head count requirement</div><div>- 4+ hours/rep freed: Automation → no more manual drudgery </div><div>- Operational Clarity → track time-to-engagement and key operational stats</div><div>- 3x ROAS: Done-for-you Martech → right avatar targeting, multivariate testing - zero disruption. </div><div><br /></div><div>We diagnose → deploy → optimise. </div><div><br /></div><div>You carry on doing what you do best. Which module interests you most? </div><div><br /></div><div>Takes 3 minutes to map to {{companyName}}: <a href=\"https://humtech.ai/free-ai-diagnostic\">Free Use Case Assessment</a></div><div><br /></div><div>Best wishes, </div><div>{{accountSignature}} </div>"
+            }
+          ],
+          "delay_unit": "days",
+          "pre_delay_unit": "days"
+        },
+        {
+          "type": "email",
+          "delay": 8,
+          "variants": [
+            {
+              "subject": "Where do we go from here?",
+              "body": "<div>Hi {{firstName}}</div><div><br /></div><div>I reached out a few times re zero cost AI systems for {{companyName}} but didn't hear back. </div><div><br /></div><div>Where do we go from here? </div><div><br /></div>"
+            }
+          ],
+          "delay_unit": "days",
+          "pre_delay_unit": "days"
+        },
+        {
+          "type": "email",
+          "delay": 7,
+          "variants": [
+            {
+              "subject": "AI and automation revenue systems for {{companyName}}?",
+              "body": "<div>Hi {{firstName}}, Are you interested in AI and automation revenue systems for {{companyName}}? </div>"
+            }
+          ],
+          "delay_unit": "days",
+          "pre_delay_unit": "days"
+        }
+      ]
+    }
+  ]
+}

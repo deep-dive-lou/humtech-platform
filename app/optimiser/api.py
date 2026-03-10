@@ -16,7 +16,10 @@ from pydantic import BaseModel
 
 from ..db import get_pool
 from . import stats
-from .queries import INSERT_OBSERVATION, VARIANT_POSTERIORS, GET_EXPERIMENT
+from .queries import (
+    INSERT_OBSERVATION, VARIANT_POSTERIORS, GET_EXPERIMENT,
+    GET_LATEST_GENERATION,
+)
 from .rollup import rollup_experiment
 
 router = APIRouter(prefix="/optimiser/api", tags=["optimiser-api"])
@@ -112,6 +115,15 @@ async def allocate(experiment_id: str):
         if not rows:
             return _cors_json({"error": "no active variants"}, 404)
 
+        # For evolutionary mode, filter to current generation's variants only
+        mode = exp.get("mode") if hasattr(exp, "get") else dict(exp).get("mode")
+        if mode == "evolutionary":
+            gen = await conn.fetchrow(GET_LATEST_GENERATION, exp["tenant_id"], experiment_id)
+            if gen:
+                pop = json.loads(gen["population"]) if isinstance(gen["population"], str) else gen["population"]
+                gen_vids = {m["variant_id"] for m in pop}
+                rows = [r for r in rows if str(r["variant_id"]) in gen_vids]
+
         variants = []
         for r in rows:
             alpha, beta = stats.beta_posterior(prior_alpha, prior_beta, r["successes"], r["failures"])
@@ -120,6 +132,9 @@ async def allocate(experiment_id: str):
                 "alpha": alpha,
                 "beta": beta,
             })
+
+        if not variants:
+            return _cors_json({"error": "no active variants"}, 404)
 
         chosen_id = stats.thompson_allocate(variants)
 

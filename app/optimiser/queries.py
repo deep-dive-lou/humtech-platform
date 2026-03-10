@@ -168,6 +168,27 @@ ORDER BY ds.day, v.sort_order;
 # Allocate — fetch posteriors for Thompson Sampling
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Taguchi — observations with factor_values for ANOVA
+# ---------------------------------------------------------------------------
+
+TAGUCHI_OBSERVATIONS = """
+SELECT
+    v.variant_id, v.label, v.factor_values,
+    COALESCE(SUM(ds.impressions), 0)::int AS impressions,
+    COALESCE(SUM(ds.conversions), 0)::int AS conversions
+FROM optimiser.variants v
+LEFT JOIN optimiser.daily_stats ds
+    ON ds.variant_id = v.variant_id AND ds.experiment_id = v.experiment_id
+WHERE v.tenant_id = $1::uuid AND v.experiment_id = $2::uuid AND v.is_active = TRUE
+GROUP BY v.variant_id, v.label, v.factor_values
+ORDER BY v.sort_order;
+"""
+
+# ---------------------------------------------------------------------------
+# Allocate — fetch posteriors for Thompson Sampling
+# ---------------------------------------------------------------------------
+
 VARIANT_POSTERIORS = """
 SELECT
     v.variant_id,
@@ -179,4 +200,37 @@ LEFT JOIN optimiser.daily_stats ds
 WHERE v.experiment_id = $1::uuid AND v.is_active = TRUE
 GROUP BY v.variant_id
 ORDER BY v.sort_order;
+"""
+
+# ---------------------------------------------------------------------------
+# Evolutionary generations
+# ---------------------------------------------------------------------------
+
+INSERT_GENERATION = """
+INSERT INTO optimiser.evolutionary_generations
+    (tenant_id, experiment_id, generation_number, population)
+VALUES ($1::uuid, $2::uuid, $3, $4::jsonb)
+RETURNING generation_id;
+"""
+
+GET_GENERATIONS = """
+SELECT generation_id, generation_number, population, created_at
+FROM optimiser.evolutionary_generations
+WHERE tenant_id = $1::uuid AND experiment_id = $2::uuid
+ORDER BY generation_number DESC;
+"""
+
+GET_LATEST_GENERATION = """
+SELECT generation_id, generation_number, population, created_at
+FROM optimiser.evolutionary_generations
+WHERE tenant_id = $1::uuid AND experiment_id = $2::uuid
+ORDER BY generation_number DESC
+LIMIT 1;
+"""
+
+DEACTIVATE_VARIANTS = """
+UPDATE optimiser.variants
+SET is_active = FALSE
+WHERE tenant_id = $1::uuid AND experiment_id = $2::uuid
+  AND variant_id != ALL($3::uuid[]);
 """

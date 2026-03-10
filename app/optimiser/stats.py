@@ -205,3 +205,65 @@ def thompson_allocate(
             best_draw = draw
             best_id = v["variant_id"]
     return best_id
+
+
+# ---------------------------------------------------------------------------
+# Combined Bayesian + Sequential winner check
+# ---------------------------------------------------------------------------
+
+def check_winner_sequential(
+    variants: list[dict[str, Any]],
+    rules: dict[str, Any],
+    experiment_started_at: datetime,
+    now: datetime | None = None,
+    alpha: float = 0.05,
+    tau: float = 0.03,
+) -> dict[str, Any] | None:
+    """Enhanced winner check requiring both Bayesian and sequential agreement.
+
+    Winner is declared only when BOTH methods agree on the same variant:
+    1. Bayesian: P(best) > threshold AND expected_loss < threshold
+    2. Sequential: mSPRT rejects null for that variant vs control
+
+    This prevents false positives from repeated checking (sequential handles it)
+    while also ensuring practical significance (Bayesian expected loss).
+
+    Args:
+        variants: [{"variant_id", "alpha", "beta", "impressions",
+                     "conversions", "is_control"}, ...]
+        rules: {"p_best_threshold", "expected_loss_threshold",
+                "min_impressions", "min_days"}
+        experiment_started_at: when the experiment was started
+        now: current time (defaults to utcnow)
+        alpha: sequential test significance level
+        tau: mSPRT mixing parameter
+
+    Returns:
+        Winning variant dict or None.
+    """
+    from . import sequential
+
+    # First check Bayesian winner (includes min_days / min_impressions guards)
+    bayesian_winner = check_winner(variants, rules, experiment_started_at, now)
+    if bayesian_winner is None:
+        return None
+
+    # Now verify with sequential test
+    seq_status = sequential.sequential_status(
+        [{"variant_id": v["variant_id"],
+          "impressions": v.get("impressions", 0),
+          "conversions": v.get("conversions", 0),
+          "is_control": v.get("is_control", False)}
+         for v in variants],
+        alpha=alpha,
+        tau=tau,
+    )
+
+    winner_vid = bayesian_winner["variant_id"]
+    vr = seq_status["variant_results"].get(winner_vid, {})
+
+    if vr.get("sprt_decision") == "winner":
+        bayesian_winner["sequential_confirmed"] = True
+        return bayesian_winner
+
+    return None

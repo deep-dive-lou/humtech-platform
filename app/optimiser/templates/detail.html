@@ -98,6 +98,30 @@
 </div>
 {% endif %}
 
+<!-- Sequential Analysis -->
+{% if sequential %}
+<div class="bg-white rounded-xl border border-gray-200 p-5 mb-8">
+  <div class="flex items-center gap-3 mb-3">
+    <i data-lucide="shield-check" class="w-5 h-5 text-blue-600"></i>
+    <h2 class="text-sm font-semibold text-gray-900">Sequential Analysis</h2>
+    <span class="text-[10px] uppercase px-2 py-0.5 rounded-full
+      {% if sequential.recommendation == 'winner_found' %}bg-green-100 text-green-700
+      {% elif sequential.recommendation == 'no_effect' %}bg-gray-100 text-gray-600
+      {% else %}bg-blue-100 text-blue-700{% endif %}">
+      {{ sequential.recommendation | replace('_', ' ') | title }}
+    </span>
+  </div>
+  <p class="text-xs text-gray-500">
+    Always-valid inference — these results are safe to check at any time without inflating error rates.
+    {% if sequential.safe_to_stop %}
+    <span class="text-green-600 font-medium">Safe to stop.</span>
+    {% else %}
+    <span class="text-amber-600 font-medium">Continue collecting data.</span>
+    {% endif %}
+  </p>
+</div>
+{% endif %}
+
 <!-- Variant table -->
 <div class="bg-white rounded-xl border border-gray-200 overflow-hidden mb-8">
   <div class="px-6 py-4 border-b border-gray-200">
@@ -110,9 +134,13 @@
         <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Impressions</th>
         <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Conversions</th>
         <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Rate</th>
-        <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">95% CI</th>
+        <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Bayesian CI</th>
         <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">P(best)</th>
         <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Exp. Loss</th>
+        {% if sequential %}
+        <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3" title="Anytime-valid confidence interval — safe to check at any sample size">Sequential CI</th>
+        <th class="text-center text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3" title="Mixture SPRT decision vs control">SPRT</th>
+        {% endif %}
       </tr>
     </thead>
     <tbody class="divide-y divide-gray-100">
@@ -132,11 +160,148 @@
           </span>
         </td>
         <td class="px-6 py-3 text-sm text-right text-gray-500">{{ "%.4f"|format(v.expected_loss) }}</td>
+        {% if sequential %}
+        <td class="px-6 py-3 text-xs text-right text-gray-500">{{ "%.2f"|format(v.seq_ci_lower * 100) }}–{{ "%.2f"|format(v.seq_ci_upper * 100) }}%</td>
+        <td class="px-6 py-3 text-xs text-center">
+          {% if v.sprt_decision == 'winner' %}
+          <span class="inline-block px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold">Winner</span>
+          {% elif v.sprt_decision == 'loser' %}
+          <span class="inline-block px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">Loser</span>
+          {% elif v.sprt_decision == 'control' %}
+          <span class="inline-block px-2 py-0.5 rounded-full bg-blue-100 text-blue-600 font-medium">Control</span>
+          {% else %}
+          <span class="inline-block px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Testing...</span>
+          {% endif %}
+        </td>
+        {% endif %}
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+
+<!-- Taguchi Factor Analysis -->
+{% if taguchi %}
+<div class="bg-white rounded-xl border border-gray-200 overflow-hidden mb-8">
+  <div class="px-6 py-4 border-b border-gray-200">
+    <h2 class="text-sm font-semibold text-gray-900">Factor Analysis (ANOVA)</h2>
+    <p class="text-xs text-gray-500 mt-0.5">Which variables matter most? Ranked by contribution to total variance.</p>
+  </div>
+  <table class="w-full">
+    <thead class="bg-gray-50 border-b border-gray-200">
+      <tr>
+        <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Factor</th>
+        <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Contribution</th>
+        <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">F-statistic</th>
+        <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">p-value</th>
+        <th class="px-6 py-3 w-1/3">
+          <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Impact</span>
+        </th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for c in taguchi.contributions %}
+      <tr>
+        <td class="px-6 py-3 text-sm font-medium text-gray-900">{{ c.name }}</td>
+        <td class="px-6 py-3 text-sm text-right font-semibold
+          {% if c.contribution_pct > 30 %}text-green-600
+          {% elif c.contribution_pct > 10 %}text-gray-900
+          {% else %}text-gray-400{% endif %}">
+          {{ "%.1f"|format(c.contribution_pct) }}%
+        </td>
+        <td class="px-6 py-3 text-sm text-right text-gray-600">{{ "%.2f"|format(c.f_statistic) }}</td>
+        <td class="px-6 py-3 text-sm text-right
+          {% if c.p_value < 0.01 %}text-green-600 font-medium
+          {% elif c.p_value < 0.05 %}text-amber-600
+          {% else %}text-gray-400{% endif %}">
+          {% if c.p_value < 0.001 %}&lt;0.001
+          {% else %}{{ "%.3f"|format(c.p_value) }}{% endif %}
+        </td>
+        <td class="px-6 py-3">
+          <div class="w-full bg-gray-100 rounded-full h-2">
+            <div class="h-2 rounded-full {% if c.contribution_pct > 30 %}bg-green-500{% elif c.contribution_pct > 10 %}bg-blue-500{% else %}bg-gray-300{% endif %}"
+                 style="width: {{ [c.contribution_pct, 100] | min }}%"></div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Optimal Combination -->
+{% if taguchi.optimal %}
+<div class="bg-amber-50 border border-amber-200 rounded-xl p-5 mb-8">
+  <div class="flex items-center gap-3">
+    <i data-lucide="target" class="w-6 h-6 text-amber-600"></i>
+    <div>
+      <p class="text-sm font-semibold text-amber-800">Predicted optimal combination</p>
+      <p class="text-sm text-amber-700 mt-1">
+        {% for o in taguchi.optimal %}
+          <span class="inline-block bg-amber-100 px-2 py-0.5 rounded text-xs font-medium mr-1 mb-1">
+            {{ o.factor_name }}: {{ o.level_label }}
+          </span>
+        {% endfor %}
+      </p>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endif %}
+
+<!-- Evolutionary generation dashboard -->
+{% if evo %}
+<div class="bg-white rounded-xl border border-gray-200 overflow-hidden mb-8">
+  <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+    <div>
+      <h2 class="text-sm font-semibold text-gray-900">Generation {{ evo.current_generation }} of {{ evo.max_generations }}</h2>
+      <p class="text-xs text-gray-500 mt-0.5">Population: {{ evo.population | length }} variants. Min {{ evo.min_impressions }} impressions per variant before advancing.</p>
+    </div>
+    {% if exp.status == 'running' %}
+    <form method="POST" action="/optimiser/experiments/{{ exp.experiment_id }}/advance">
+      <button type="submit" {% if not evo.ready_to_advance %}disabled{% endif %}
+              class="px-4 py-2 text-sm font-medium rounded-lg transition-colors
+                {% if evo.ready_to_advance %}bg-purple-600 text-white hover:bg-purple-700
+                {% else %}bg-gray-100 text-gray-400 cursor-not-allowed{% endif %}">
+        <i data-lucide="fast-forward" class="w-4 h-4 inline-block mr-1"></i>
+        Advance Generation
+      </button>
+    </form>
+    {% endif %}
+  </div>
+  <table class="w-full">
+    <thead class="bg-gray-50 border-b border-gray-200">
+      <tr>
+        <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Variant</th>
+        <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Genome</th>
+        <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Impressions</th>
+        <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Rate</th>
+        <th class="text-center text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Status</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for m in evo.population %}
+      <tr class="{% if m.is_elite %}bg-purple-50/30{% endif %}">
+        <td class="px-6 py-3 text-sm font-medium text-gray-900">
+          {{ m.label }}
+          {% if m.is_elite %}<span class="ml-2 text-[10px] uppercase text-purple-600 font-semibold">Elite</span>{% endif %}
+        </td>
+        <td class="px-6 py-3 text-xs text-gray-500 font-mono">{{ m.genome }}</td>
+        <td class="px-6 py-3 text-sm text-right text-gray-700">{{ "{:,}".format(m.impressions) }}</td>
+        <td class="px-6 py-3 text-sm text-right font-medium text-gray-900">{{ "%.2f"|format(m.rate * 100) }}%</td>
+        <td class="px-6 py-3 text-xs text-center">
+          {% if m.impressions >= evo.min_impressions %}
+          <span class="inline-block px-2 py-0.5 rounded-full bg-green-100 text-green-700">Ready</span>
+          {% else %}
+          <span class="inline-block px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">{{ m.impressions }}/{{ evo.min_impressions }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 
 <!-- Charts row -->
 <div class="grid grid-cols-2 gap-6 mb-8">
@@ -146,11 +311,25 @@
     <div id="beta-chart" style="height: 300px;"></div>
   </div>
 
-  <!-- Convergence chart -->
+  {% if evo and evo.gen_series | length > 1 %}
+  <!-- Fitness convergence chart (Evolutionary) -->
+  <div class="bg-white rounded-xl border border-gray-200 p-6">
+    <h2 class="text-sm font-semibold text-gray-900 mb-4">Fitness Convergence</h2>
+    <div id="evo-convergence-chart" style="height: 300px;"></div>
+  </div>
+  {% elif taguchi and taguchi.effects %}
+  <!-- Main effects chart (Taguchi) -->
+  <div class="bg-white rounded-xl border border-gray-200 p-6">
+    <h2 class="text-sm font-semibold text-gray-900 mb-4">Main Effects</h2>
+    <div id="main-effects-chart" style="height: 300px;"></div>
+  </div>
+  {% else %}
+  <!-- Convergence chart (Bandit) -->
   <div class="bg-white rounded-xl border border-gray-200 p-6">
     <h2 class="text-sm font-semibold text-gray-900 mb-4">Conversion Rate Over Time</h2>
     <div id="convergence-chart" style="height: 300px;"></div>
   </div>
+  {% endif %}
 </div>
 
 <!-- Tracking snippet -->
@@ -261,7 +440,32 @@ if (variants.some(v => v.impressions > 0)) {
   document.getElementById('beta-chart').innerHTML = '<p class="text-sm text-gray-400 text-center pt-20">No data yet</p>';
 }
 
+// --- Main effects chart (Taguchi) ---
+{% if taguchi and taguchi.effects %}
+const effects = {{ taguchi.effects | tojson }};
+const effectTraces = [];
+let ei = 0;
+for (const [factorName, levelMeans] of Object.entries(effects)) {
+  const labels = Object.keys(levelMeans);
+  const values = Object.values(levelMeans).map(v => v * 100);
+  effectTraces.push({
+    x: labels, y: values, type: 'scatter', mode: 'lines+markers',
+    name: factorName, line: {color: colors[ei % colors.length], width: 2.5},
+    marker: {size: 8},
+  });
+  ei++;
+}
+Plotly.newPlot('main-effects-chart', effectTraces, {
+  margin: {t: 10, r: 20, b: 40, l: 50},
+  xaxis: {title: 'Level'},
+  yaxis: {title: 'Mean Response %', ticksuffix: '%'},
+  legend: {orientation: 'h', y: -0.3},
+  paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+}, {responsive: true, displayModeBar: false});
+{% endif %}
+
 // --- Convergence chart ---
+{% if not taguchi or not taguchi.effects %}
 const daily = {{ daily_data | tojson }};
 if (daily.length > 0) {
   // Group by variant, compute cumulative rate
@@ -276,12 +480,27 @@ if (daily.length > 0) {
     bv.rates.push(bv.cumImp > 0 ? bv.cumConv / bv.cumImp : 0);
   });
 
+  const seqSeries = {{ seq_series | tojson }};
   const convTraces = [];
   let ci = 0;
   for (const [vid, bv] of Object.entries(byVariant)) {
+    const color = colors[ci % colors.length];
+    // Confidence band (if sequential CI data exists)
+    const ss = seqSeries[vid];
+    if (ss && ss.points && ss.points.length > 0) {
+      const bandDays = ss.points.map(p => p.day);
+      const bandUpper = ss.points.map(p => p.ci_upper);
+      const bandLower = ss.points.map(p => p.ci_lower);
+      convTraces.push({
+        x: bandDays.concat([...bandDays].reverse()),
+        y: bandUpper.concat([...bandLower].reverse()),
+        fill: 'toself', fillcolor: color + '15', type: 'scatter', mode: 'none',
+        name: bv.label + ' CI', showlegend: false, hoverinfo: 'skip',
+      });
+    }
     convTraces.push({
       x: bv.days, y: bv.rates, type: 'scatter', mode: 'lines+markers',
-      name: bv.label, line: {color: colors[ci % colors.length], width: 2},
+      name: bv.label, line: {color: color, width: 2},
       marker: {size: 4},
     });
     ci++;
@@ -297,5 +516,32 @@ if (daily.length > 0) {
 } else {
   document.getElementById('convergence-chart').innerHTML = '<p class="text-sm text-gray-400 text-center pt-20">No data yet</p>';
 }
+{% endif %}
+
+// --- Evolutionary fitness convergence chart ---
+{% if evo and evo.gen_series | length > 1 %}
+const genSeries = {{ evo.gen_series | tojson }};
+const evoTraces = [];
+const gens = genSeries.map(g => g.generation);
+const bestFit = genSeries.map(g => g.best_fitness != null ? g.best_fitness * 100 : null);
+const avgFit = genSeries.map(g => g.avg_fitness != null ? g.avg_fitness * 100 : null);
+
+evoTraces.push({
+  x: gens, y: bestFit, type: 'scatter', mode: 'lines+markers',
+  name: 'Best fitness', line: {color: '#8b5cf6', width: 2.5}, marker: {size: 6},
+});
+evoTraces.push({
+  x: gens, y: avgFit, type: 'scatter', mode: 'lines+markers',
+  name: 'Avg fitness', line: {color: '#a78bfa', width: 1.5, dash: 'dot'}, marker: {size: 4},
+});
+
+Plotly.newPlot('evo-convergence-chart', evoTraces, {
+  margin: {t: 10, r: 20, b: 40, l: 50},
+  xaxis: {title: 'Generation', dtick: 1},
+  yaxis: {title: 'Fitness %', ticksuffix: '%'},
+  legend: {orientation: 'h', y: -0.25},
+  paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+}, {responsive: true, displayModeBar: false});
+{% endif %}
 </script>
 {% endblock %}

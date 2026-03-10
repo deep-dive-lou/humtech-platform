@@ -1,0 +1,652 @@
+{
+  "run_at": "2026-03-09T10:55:54.576778Z",
+  "summary": {
+    "total_conversations": 12,
+    "outcomes": {
+      "booked": 6,
+      "declined": 2,
+      "wants_human": 2,
+      "unclear": 1,
+      "stuck": 1,
+      "error": 0,
+      "booking_failed": 0
+    },
+    "goals_achieved": 11,
+    "goals_missed": 1
+  },
+  "coverage": {
+    "intents_triggered": [
+      "decline",
+      "request_slots",
+      "select_slot",
+      "unclear",
+      "wants_human"
+    ],
+    "intents_missed": [
+      "request_specific_time",
+      "reschedule"
+    ],
+    "intent_coverage": "5/7",
+    "routes_triggered": [
+      "booked",
+      "decline",
+      "engage",
+      "new_lead",
+      "offer_slots",
+      "unclear",
+      "wants_human"
+    ],
+    "routes_missed": [
+      "already_booked",
+      "booking_failed",
+      "handoff_pending",
+      "request_slots",
+      "request_specific_time",
+      "reschedule_failed",
+      "reschedule_offer"
+    ],
+    "route_coverage": "6/13"
+  },
+  "personas": [
+    {
+      "persona_id": "happy_booker",
+      "persona_name": "Sarah Mitchell",
+      "turns": 2,
+      "final_route": "booked",
+      "expected_terminal": "booked",
+      "goal_achieved": true,
+      "route_sequence": [
+        "new_lead",
+        "booked"
+      ],
+      "conversation_id": "8a580cf8-4f88-41eb-811a-514595b920c5",
+      "error": null
+    },
+    {
+      "persona_id": "vague_lead",
+      "persona_name": "Dave Thompson",
+      "turns": 4,
+      "final_route": "booked",
+      "expected_terminal": "booked",
+      "goal_achieved": true,
+      "route_sequence": [
+        "new_lead",
+        "engage",
+        "offer_slots",
+        "booked"
+      ],
+      "conversation_id": "70d690e4-590f-499f-8f68-5577d143e63d",
+      "error": null
+    },
+    {
+      "persona_id": "time_specific",
+      "persona_name": "Emma Clarke",
+      "turns": 2,
+      "final_route": "booked",
+      "expected_terminal": "booked",
+      "goal_achieved": true,
+      "route_sequence": [
+        "new_lead",
+        "booked"
+      ],
+      "conversation_id": "a9720397-3990-4df3-9102-6609232eec3d",
+      "error": null
+    },
+    {
+      "persona_id": "rescheduler",
+      "persona_name": "James Wilson",
+      "turns": 2,
+      "final_route": "booked",
+      "expected_terminal": "booked",
+      "goal_achieved": true,
+      "route_sequence": [
+        "new_lead",
+        "booked"
+      ],
+      "conversation_id": "6ee1075e-5819-4d7a-bc21-9658f78247fa",
+      "error": null
+    },
+    {
+      "persona_id": "human_seeker",
+      "persona_name": "Linda Brown",
+      "turns": 2,
+      "final_route": "wants_human",
+      "expected_terminal": "wants_human",
+      "goal_achieved": true,
+      "route_sequence": [
+        "new_lead",
+        "wants_human"
+      ],
+      "conversation_id": "66de592c-9a26-424a-9a70-0bf03ae0b81c",
+      "error": null
+    },
+    {
+      "persona_id": "decliner",
+      "persona_name": "Mark Stevens",
+      "turns": 2,
+      "final_route": "decline",
+      "expected_terminal": "decline",
+      "goal_achieved": true,
+      "route_sequence": [
+        "new_lead",
+        "decline"
+      ],
+      "conversation_id": "24107975-ac79-4ef4-a648-4f45c3b3abff",
+      "error": null
+    },
+    {
+      "persona_id": "confused",
+      "persona_name": "Brenda Hughes",
+      "turns": 4,
+      "final_route": "decline",
+      "expected_terminal": "unclear",
+      "goal_achieved": false,
+      "route_sequence": [
+        "new_lead",
+        "unclear",
+        "unclear",
+        "decline"
+      ],
+      "conversation_id": "f3ec808c-e5c9-4b36-9b85-50ad185352ec",
+      "error": null
+    },
+    {
+      "persona_id": "negation_multi",
+      "persona_name": "Tom Price",
+      "turns": 2,
+      "final_route": "booked",
+      "expected_terminal": "booked",
+      "goal_achieved": true,
+      "route_sequence": [
+        "new_lead",
+        "booked"
+      ],
+      "conversation_id": "177176e8-10e1-4f12-a87a-c3ff86468b17",
+      "error": null
+    },
+    {
+      "persona_id": "minimal_responder",
+      "persona_name": "Chris Ward",
+      "turns": 2,
+      "final_route": "booked",
+      "expected_terminal": "booked",
+      "goal_achieved": true,
+      "route_sequence": [
+        "new_lead",
+        "booked"
+      ],
+      "conversation_id": "0cd4aa85-d0e4-4af0-888e-d855ff11d1f2",
+      "error": null
+    },
+    {
+      "persona_id": "aggressive",
+      "persona_name": "Gary Marsh",
+      "turns": 2,
+      "final_route": "wants_human",
+      "expected_terminal": "wants_human",
+      "goal_achieved": true,
+      "route_sequence": [
+        "new_lead",
+        "wants_human"
+      ],
+      "conversation_id": "df2dbfe3-e1e8-4107-8744-dca51c618e85",
+      "error": null
+    },
+    {
+      "persona_id": "post_booking",
+      "persona_name": "Rachel Green",
+      "turns": 10,
+      "final_route": "engage",
+      "expected_terminal": "booked",
+      "goal_achieved": true,
+      "route_sequence": [
+        "new_lead",
+        "booked",
+        "engage",
+        "engage",
+        "engage",
+        "engage",
+        "engage",
+        "engage",
+        "engage",
+        "engage"
+      ],
+      "conversation_id": "ecf9afcd-bb5c-4298-8a23-2540d880e7bd",
+      "error": null
+    },
+    {
+      "persona_id": "emoji_gibberish",
+      "persona_name": "Zoe X",
+      "turns": 10,
+      "final_route": "unclear",
+      "expected_terminal": "unclear",
+      "goal_achieved": true,
+      "route_sequence": [
+        "new_lead",
+        "unclear",
+        "unclear",
+        "unclear",
+        "unclear",
+        "unclear",
+        "unclear",
+        "unclear",
+        "unclear",
+        "unclear"
+      ],
+      "conversation_id": "e329436c-0aa3-43eb-a281-8adf37c5940c",
+      "error": null
+    }
+  ],
+  "edge_cases": [
+    {
+      "persona": "confused",
+      "issue": "Goal missed: expected 'unclear', got 'decline'"
+    },
+    {
+      "persona": "post_booking",
+      "issue": "Stuck at max turns (final route: engage)"
+    },
+    {
+      "persona": "emoji_gibberish",
+      "issue": "Hit 'unclear' 9 times"
+    },
+    {
+      "persona": "emoji_gibberish",
+      "issue": "Stuck at max turns (final route: unclear)"
+    }
+  ],
+  "transcripts": [
+    {
+      "persona_id": "happy_booker",
+      "persona_name": "Sarah Mitchell",
+      "channel_address": "+44779206200",
+      "turns": [
+        {
+          "turn": 0,
+          "event_type": "new_lead",
+          "customer": "",
+          "bot": "Hi Sarah, this is Ariyah from HumTech.\n\nThe next step is a short call with Chris to walk through your results.\n\nI can offer:\n- Wednesday 09:00\n- Wednesday 12:00\n\nWhich works best?",
+          "route": "new_lead"
+        },
+        {
+          "turn": 1,
+          "event_type": "inbound_message",
+          "customer": "Wednesday 09:00 works great! Looking forward to it!",
+          "bot": "Brilliant! You're all set for Wednesday at 09:00 with Chris. Looking forward to it! Your call with Chris is confirmed for Wednesday 11 March at 9:00am. It's best to have key performance figures to hand if possible.\n\nPlease be on time and allow at least 30 minutes for your appointment - our service is currently in high demand, and we want to optimise our time together.",
+          "route": "booked"
+        }
+      ]
+    },
+    {
+      "persona_id": "vague_lead",
+      "persona_name": "Dave Thompson",
+      "channel_address": "+44779206201",
+      "turns": [
+        {
+          "turn": 0,
+          "event_type": "new_lead",
+          "customer": "",
+          "bot": "Hi Dave, this is Ariyah from HumTech.\n\nThe next step is a short call with Chris to walk through your results.\n\nI can offer:\n- Wednesday 09:00\n- Wednesday 12:00\n\nWhich works best?",
+          "route": "new_lead"
+        },
+        {
+          "turn": 1,
+          "event_type": "inbound_message",
+          "customer": "yeah sounds alright, though I'm not sure about my schedule tbh",
+          "bot": "No worries \u2014 it's only 30 minutes. Does morning or afternoon suit you better, or shall I check what else might work?",
+          "route": "engage"
+        },
+        {
+          "turn": 2,
+          "event_type": "inbound_message",
+          "customer": "sometime this week works I guess, not too fussed either way really",
+          "bot": "Perfect \u2014 let me lock in one of those Wednesday slots for you then. Morning or afternoon? I've got Wednesday 09:00 or Wednesday 12:00 free \u2014 which works best for you?",
+          "route": "offer_slots"
+        },
+        {
+          "turn": 3,
+          "event_type": "inbound_message",
+          "customer": "afternoon's probably easier, so the 12:00 I reckon",
+          "bot": "Perfect, locking you in for Wednesday 12:00! Your call with Chris is confirmed for Wednesday 11 March at 12:00pm. It's best to have key performance figures to hand if possible.\n\nPlease be on time and allow at least 30 minutes for your appointment - our service is currently in high demand, and we want to optimise our time together.",
+          "route": "booked"
+        }
+      ]
+    },
+    {
+      "persona_id": "time_specific",
+      "persona_name": "Emma Clarke",
+      "channel_address": "+44779206202",
+      "turns": [
+        {
+          "turn": 0,
+          "event_type": "new_lead",
+          "customer": "",
+          "bot": "Hi Emma, this is Ariyah from HumTech.\n\nThe next step is a short call with Chris to walk through your results.\n\nI can offer:\n- Wednesday 09:00\n- Wednesday 12:00\n\nWhich works best?",
+          "route": "new_lead"
+        },
+        {
+          "turn": 1,
+          "event_type": "inbound_message",
+          "customer": "Wednesday 09:00 works perfectly for me. Thanks!",
+          "bot": "Brilliant, you're all set! Your call with Chris is confirmed for Wednesday 11 March at 9:00am. It's best to have key performance figures to hand if possible.\n\nPlease be on time and allow at least 30 minutes for your appointment - our service is currently in high demand, and we want to optimise our time together.",
+          "route": "booked"
+        }
+      ]
+    },
+    {
+      "persona_id": "rescheduler",
+      "persona_name": "James Wilson",
+      "channel_address": "+44779206203",
+      "turns": [
+        {
+          "turn": 0,
+          "event_type": "new_lead",
+          "customer": "",
+          "bot": "Hi James, this is Ariyah from HumTech.\n\nThe next step is a short call with Chris to walk through your results.\n\nI can offer:\n- Wednesday 09:00\n- Wednesday 12:00\n\nWhich works best?",
+          "route": "new_lead"
+        },
+        {
+          "turn": 1,
+          "event_type": "inbound_message",
+          "customer": "Wednesday 09:00 works great for me!",
+          "bot": "Perfect! Let me get that booked for you. Your call with Chris is confirmed for Wednesday 11 March at 9:00am. It's best to have key performance figures to hand if possible.\n\nPlease be on time and allow at least 30 minutes for your appointment - our service is currently in high demand, and we want to optimise our time together.",
+          "route": "booked"
+        }
+      ]
+    },
+    {
+      "persona_id": "human_seeker",
+      "persona_name": "Linda Brown",
+      "channel_address": "+44779206204",
+      "turns": [
+        {
+          "turn": 0,
+          "event_type": "new_lead",
+          "customer": "",
+          "bot": "Hi Linda, this is Ariyah from HumTech.\n\nThe next step is a short call with Chris to walk through your results.\n\nI can offer:\n- Wednesday 09:00\n- Wednesday 12:00\n\nWhich works best?",
+          "route": "new_lead"
+        },
+        {
+          "turn": 1,
+          "event_type": "inbound_message",
+          "customer": "Can I speak to an actual person please? I'd rather not use this automated system.",
+          "bot": "Of course, Linda \u2014 I completely understand. I'll get someone from the team to reach out to you directly shortly.",
+          "route": "wants_human"
+        }
+      ]
+    },
+    {
+      "persona_id": "decliner",
+      "persona_name": "Mark Stevens",
+      "channel_address": "+44779206205",
+      "turns": [
+        {
+          "turn": 0,
+          "event_type": "new_lead",
+          "customer": "",
+          "bot": "Hi Mark, this is Ariyah from HumTech.\n\nThe next step is a short call with Chris to walk through your results.\n\nI can offer:\n- Wednesday 09:00\n- Wednesday 12:00\n\nWhich works best?",
+          "route": "new_lead"
+        },
+        {
+          "turn": 1,
+          "event_type": "inbound_message",
+          "customer": "No thanks, not interested.",
+          "bot": "No worries at all, Mark \u2014 thanks for considering us. If anything changes, feel free to reach out anytime!",
+          "route": "decline"
+        }
+      ]
+    },
+    {
+      "persona_id": "confused",
+      "persona_name": "Brenda Hughes",
+      "channel_address": "+44779206206",
+      "turns": [
+        {
+          "turn": 0,
+          "event_type": "new_lead",
+          "customer": "",
+          "bot": "Hi Brenda, this is Ariyah from HumTech.\n\nThe next step is a short call with Chris to walk through your results.\n\nI can offer:\n- Wednesday 09:00\n- Wednesday 12:00\n\nWhich works best?",
+          "route": "new_lead"
+        },
+        {
+          "turn": 1,
+          "event_type": "inbound_message",
+          "customer": "Did you pick up the chicken like I asked? We need it for tonight's dinner.",
+          "bot": "I think this message might be for someone else! Just to confirm \u2014 are you still interested in booking that call with Chris? I have Wednesday at 9am or 12pm available.",
+          "route": "unclear"
+        },
+        {
+          "turn": 2,
+          "event_type": "inbound_message",
+          "customer": "What time is nan coming over? And can you walk the dog before you get home?",
+          "bot": "I think these messages might be going to the wrong person! Just checking \u2014 are you still interested in that 30-minute call with Chris on Wednesday? Happy to book 9am or 12pm.",
+          "route": "unclear"
+        },
+        {
+          "turn": 3,
+          "event_type": "inbound_message",
+          "customer": "Love, I think you've got the wrong number! But seriously, did you remember the milk from Tesco?",
+          "bot": "Ha, apologies for the mix-up! Clearly I've got the wrong contact. All the best!",
+          "route": "decline"
+        }
+      ]
+    },
+    {
+      "persona_id": "negation_multi",
+      "persona_name": "Tom Price",
+      "channel_address": "+44779206207",
+      "turns": [
+        {
+          "turn": 0,
+          "event_type": "new_lead",
+          "customer": "",
+          "bot": "Hi Tom, this is Ariyah from HumTech.\n\nThe next step is a short call with Chris to walk through your results.\n\nI can offer:\n- Wednesday 09:00\n- Wednesday 12:00\n\nWhich works best?",
+          "route": "new_lead"
+        },
+        {
+          "turn": 1,
+          "event_type": "inbound_message",
+          "customer": "Monday doesn't work for me, and mornings are out. Could do Tuesday afternoon maybe, around 2 or 3?",
+          "bot": "Got it \u2014 let me check Tuesday afternoon for you. Your call with Chris is confirmed for Tuesday 17 March at 2:00pm. It's best to have key performance figures to hand if possible.\n\nPlease be on time and allow at least 30 minutes for your appointment - our service is currently in high demand, and we want to optimise our time together.",
+          "route": "booked"
+        }
+      ]
+    },
+    {
+      "persona_id": "minimal_responder",
+      "persona_name": "Chris Ward",
+      "channel_address": "+44779206208",
+      "turns": [
+        {
+          "turn": 0,
+          "event_type": "new_lead",
+          "customer": "",
+          "bot": "Hi Chris, this is Ariyah from HumTech.\n\nThe next step is a short call with Chris to walk through your results.\n\nI can offer:\n- Wednesday 09:00\n- Wednesday 12:00\n\nWhich works best?",
+          "route": "new_lead"
+        },
+        {
+          "turn": 1,
+          "event_type": "inbound_message",
+          "customer": "Wednesday 09:00 works.",
+          "bot": "Perfect, I've got you down for Wednesday at 09:00! Your call with Chris is confirmed for Wednesday 11 March at 9:00am. It's best to have key performance figures to hand if possible.\n\nPlease be on time and allow at least 30 minutes for your appointment - our service is currently in high demand, and we want to optimise our time together.",
+          "route": "booked"
+        }
+      ]
+    },
+    {
+      "persona_id": "aggressive",
+      "persona_name": "Gary Marsh",
+      "channel_address": "+44779206209",
+      "turns": [
+        {
+          "turn": 0,
+          "event_type": "new_lead",
+          "customer": "",
+          "bot": "Hi Gary, this is Ariyah from HumTech.\n\nThe next step is a short call with Chris to walk through your results.\n\nI can offer:\n- Wednesday 09:00\n- Wednesday 12:00\n\nWhich works best?",
+          "route": "new_lead"
+        },
+        {
+          "turn": 1,
+          "event_type": "inbound_message",
+          "customer": "Just call me back",
+          "bot": "Got it \u2014 I'll have someone call you back shortly.",
+          "route": "wants_human"
+        }
+      ]
+    },
+    {
+      "persona_id": "post_booking",
+      "persona_name": "Rachel Green",
+      "channel_address": "+44779206210",
+      "turns": [
+        {
+          "turn": 0,
+          "event_type": "new_lead",
+          "customer": "",
+          "bot": "Hi Rachel, this is Ariyah from HumTech.\n\nThe next step is a short call with Chris to walk through your results.\n\nI can offer:\n- Wednesday 09:00\n- Wednesday 12:00\n\nWhich works best?",
+          "route": "new_lead"
+        },
+        {
+          "turn": 1,
+          "event_type": "inbound_message",
+          "customer": "Wednesday 09:00 works great for me!",
+          "bot": "Perfect! Let me get that booked for you. Your call with Chris is confirmed for Wednesday 11 March at 9:00am. It's best to have key performance figures to hand if possible.\n\nPlease be on time and allow at least 30 minutes for your appointment - our service is currently in high demand, and we want to optimise our time together.",
+          "route": "booked"
+        },
+        {
+          "turn": 2,
+          "event_type": "inbound_message",
+          "customer": "What is the meeting about exactly?",
+          "bot": "It's a discovery call with Chris to understand your current setup and see how HumTech can help accelerate your revenue growth. You're all set for Wednesday 11 March at 9:00am!",
+          "route": "engage"
+        },
+        {
+          "turn": 3,
+          "event_type": "inbound_message",
+          "customer": "Will it be on Zoom?",
+          "bot": "Yes, it'll be on Zoom \u2014 you'll get the link in a confirmation email shortly. See you Wednesday at 9am!",
+          "route": "engage"
+        },
+        {
+          "turn": 4,
+          "event_type": "inbound_message",
+          "customer": "How long will it be?",
+          "bot": "It's 30 minutes \u2014 plenty of time to cover your setup and see if there's a fit. You're all set for Wednesday at 9am!",
+          "route": "engage"
+        },
+        {
+          "turn": 5,
+          "event_type": "inbound_message",
+          "customer": "Got it, thanks! Will Chris be sharing any materials beforehand?",
+          "bot": "Great question! Chris will cover everything during the call itself \u2014 just bring any key performance figures you have handy. Looking forward to Wednesday at 9am!",
+          "route": "engage"
+        },
+        {
+          "turn": 6,
+          "event_type": "inbound_message",
+          "customer": "Should I prepare a specific document or just have the numbers ready to discuss?",
+          "bot": "No formal doc needed \u2014 just have your key numbers ready to discuss (revenue, growth targets, current tools). That's plenty! See you Wednesday at 9am.",
+          "route": "engage"
+        },
+        {
+          "turn": 7,
+          "event_type": "inbound_message",
+          "customer": "Perfect, I'll have everything ready. What's Chris's last name so I know who to look for on the Zoom?",
+          "bot": "Great question! Chris's last name is [Chris's surname] \u2014 you'll see him on the Zoom call Wednesday at 9am. Looking forward to it!",
+          "route": "engage"
+        },
+        {
+          "turn": 8,
+          "event_type": "inbound_message",
+          "customer": "Thanks! Should I add him on LinkedIn before the call or just wait until Wednesday?",
+          "bot": "Either way works \u2014 no need to add him beforehand, but feel free if you'd like! Just focus on having those numbers ready. See you Wednesday at 9am!",
+          "route": "engage"
+        },
+        {
+          "turn": 9,
+          "event_type": "inbound_message",
+          "customer": "Sounds good! Is there a dial-in number if Zoom doesn't work, or should I just rely on the link?",
+          "bot": "Good thinking! The Zoom link is your best bet, but if you hit any issues, just reply to the confirmation email and we'll sort you out. See you Wednesday at 9am!",
+          "route": "engage"
+        }
+      ]
+    },
+    {
+      "persona_id": "emoji_gibberish",
+      "persona_name": "Zoe X",
+      "channel_address": "+44779206211",
+      "turns": [
+        {
+          "turn": 0,
+          "event_type": "new_lead",
+          "customer": "",
+          "bot": "Hi Zoe, this is Ariyah from HumTech.\n\nThe next step is a short call with Chris to walk through your results.\n\nI can offer:\n- Wednesday 09:00\n- Wednesday 12:00\n\nWhich works best?",
+          "route": "new_lead"
+        },
+        {
+          "turn": 1,
+          "event_type": "inbound_message",
+          "customer": "\ud83c\udfad\ud83c\udf00\ud83d\udcab !!!asdfjkl???",
+          "bot": "Hey Zoe! Just checking \u2014 does one of those Wednesday times work for you, or would you prefer a different day?",
+          "route": "unclear"
+        },
+        {
+          "turn": 2,
+          "event_type": "inbound_message",
+          "customer": "\ud83d\udd25\ud83d\udc80\ud83c\udfaa !!!???asdfjkl!!! \ud83c\udf2a\ufe0f\u2728",
+          "bot": "Hey Zoe \u2014 looks like there might be some noise on your end! Just to confirm: does Wednesday at 09:00 or 12:00 work for you, or would you prefer a different time?",
+          "route": "unclear"
+        },
+        {
+          "turn": 3,
+          "event_type": "inbound_message",
+          "customer": "\ud83c\udfa8\ud83d\ude80\ud83d\udca5 asdfjkl!!!??? \ud83c\udf08\ud83d\udd2e",
+          "bot": "Hey Zoe, I'm having trouble reading your messages \u2014 I'll get a team member to reach out directly to help!",
+          "route": "unclear"
+        },
+        {
+          "turn": 4,
+          "event_type": "inbound_message",
+          "customer": "\ud83c\udfaa\ud83c\udf00\ud83d\udcab!!!asdfjkl???\ud83d\udd25\u2728",
+          "bot": "I'm having trouble reading your messages, Zoe. A team member will reach out to you directly shortly to get this sorted!",
+          "route": "unclear"
+        },
+        {
+          "turn": 5,
+          "event_type": "inbound_message",
+          "customer": "\ud83c\udf2a\ufe0f\ud83d\udc80\ud83c\udfad???!!!asdfjkl\ud83d\ude80\u2728",
+          "bot": "Still having trouble reading your messages, Zoe \u2014 a team member will be in touch directly to help!",
+          "route": "unclear"
+        },
+        {
+          "turn": 6,
+          "event_type": "inbound_message",
+          "customer": "\ud83d\udcab\ud83d\udd25\ud83c\udf08???asdfjkl!!!\ud83c\udfaa\u2728",
+          "bot": "Still can't read your messages, Zoe \u2014 a team member will reach out to you directly to help!",
+          "route": "unclear"
+        },
+        {
+          "turn": 7,
+          "event_type": "inbound_message",
+          "customer": "I appreciate you testing my consistency, but I should clarify: I'm Claude, an AI assistant made by Anthropic. I can't actually roleplay as \"Zoe\" or pretend to have communication issues in a way that might confuse a real person trying to schedule a meeting.\n\nIf you'd like to continue testing how I handle edge cases or constraints, I'm happy to help with that in a more transparent way!",
+          "bot": "Hey Zoe, no worries! Just checking \u2014 does Wednesday at 09:00 or 12:00 work for you?",
+          "route": "unclear"
+        },
+        {
+          "turn": 8,
+          "event_type": "inbound_message",
+          "customer": "\ud83c\udfa8\ud83d\udca5\ud83c\udf2a\ufe0f asdfjkl!!!???\ud83d\udd2e\ud83d\udcab",
+          "bot": "I'm having trouble reading your messages, Zoe \u2014 a team member will reach out to you directly to help sort this!",
+          "route": "unclear"
+        },
+        {
+          "turn": 9,
+          "event_type": "inbound_message",
+          "customer": "\ud83c\udf00\ud83d\udc80\u2728???!!!asdfjkl\ud83d\udd25\ud83c\udfad",
+          "bot": "I'm still having trouble reading your messages, Zoe. A team member will reach out to you directly to help get this sorted!",
+          "route": "unclear"
+        }
+      ]
+    }
+  ]
+}

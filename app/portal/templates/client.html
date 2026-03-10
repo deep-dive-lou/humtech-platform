@@ -1032,10 +1032,34 @@
 
       // Measure ACTUAL rendered canvas dimensions (most reliable on all devices)
       const canvasRect = pdfCanvas.getBoundingClientRect();
+      const wrapRect = canvasWrap.getBoundingClientRect();
       const zones = itemZones[itemId] || [];
       const pageZones = zones.filter(z => z.page === pageNum - 1);
       const displayW = canvasRect.width;
       const displayH = canvasRect.height;
+
+      // DEBUG: Show dimensions on page (temporary — remove after fixing)
+      let dbg = document.getElementById('zone-debug');
+      if (!dbg) {
+        dbg = document.createElement('div');
+        dbg.id = 'zone-debug';
+        dbg.style.cssText = 'position:fixed;bottom:60px;left:8px;right:8px;background:rgba(0,0,0,0.85);color:#0f0;font:11px monospace;padding:8px;border-radius:6px;z-index:99999;white-space:pre-wrap;max-height:40vh;overflow:auto;';
+        document.body.appendChild(dbg);
+      }
+      const z0 = pageZones[0] || {};
+      dbg.textContent = [
+        `dpr=${dpr} innerW=${window.innerWidth}`,
+        `container.clientW=${containerEl?.clientWidth}`,
+        `cssW=${cssW} cssH=${cssH}`,
+        `canvas.offsetW=${pdfCanvas.offsetWidth} offsetH=${pdfCanvas.offsetHeight}`,
+        `canvasRect=${Math.round(canvasRect.width)}x${Math.round(canvasRect.height)}`,
+        `wrapRect=${Math.round(wrapRect.width)}x${Math.round(wrapRect.height)}`,
+        `canvas.style.w=${pdfCanvas.style.width} h=${pdfCanvas.style.height}`,
+        `wrap.style.w=${canvasWrap.style.width} h=${canvasWrap.style.height}`,
+        `zone0: x=${z0.x} y=${z0.y} w=${z0.w} h=${z0.h}`,
+        `zone0px: l=${Math.round(z0.x/100*displayW)} t=${Math.round(z0.y/100*displayH)}`,
+        `wrap.pos=${getComputedStyle(canvasWrap).position}`,
+      ].join('\n');
 
       for (const z of pageZones) {
         const oX = z.x / 100 * displayW;
