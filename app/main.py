@@ -55,6 +55,13 @@ async def _startup():
 async def _shutdown():
     await close_db_pool()
 
+@app.get("/", include_in_schema=False)
+async def root(request: Request):
+    host = request.headers.get("host", "")
+    if host.startswith("portal."):
+        return RedirectResponse(url="/portal/staff/login", status_code=302)
+    return {"service": settings.service_name}
+
 @app.get("/health")
 async def health():
     return {"ok": True, "service": settings.service_name, "env": settings.env}
