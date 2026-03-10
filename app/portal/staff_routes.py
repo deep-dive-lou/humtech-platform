@@ -142,7 +142,7 @@ async def staff_dashboard(
     staff_filter = " AND r.created_by_staff_id = $2::uuid" if mine else ""
     params: list = [tid]
     if mine:
-        params.append(staff["id"])
+        params.append(staff["staff_id"])
 
     stats = await conn.fetchrow(
         f"""
