@@ -209,7 +209,7 @@ async def staff_dashboard(
                cl.full_name AS client_name
         FROM portal.audit_events ae
         LEFT JOIN portal.staff_users su
-            ON ae.actor = 'staff' AND ae.actor_id = su.id::text
+            ON ae.actor = 'staff' AND ae.actor_id = su.id
         LEFT JOIN portal.doc_requests dr ON ae.request_id = dr.id
         LEFT JOIN portal.clients cl ON dr.client_id = cl.id
         WHERE ae.tenant_id = $1::uuid
