@@ -426,7 +426,9 @@
     {% endfor %}
 
     // Zone-specific signature pads (keyed by zone id)
-    const zoneSigPads = {};
+    const zoneSigPads = {};     // legacy — kept for compatibility
+    const zoneSigData = {};     // zoneId -> dataURL (from modal signing)
+    let sigModalState = null;   // { itemId, zoneId, pad }
 
     // -----------------------------------------------------------------------
     // Init: legacy signature pads (in-document handled on click)
@@ -1054,20 +1056,32 @@
         overlay.style.height = oH + 'px';
 
         if (z.zone_type === 'signature') {
-          overlay.className += ' border-2 border-dashed border-purple-400 bg-purple-50 bg-opacity-30';
-          overlay.style.overflow = 'hidden';
-          // Block parent scroll container from capturing touch events on real mobile
-          overlay.style.touchAction = 'none';
-          overlay.addEventListener('touchstart', (e) => { e.preventDefault(); }, { passive: false });
-          overlay.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
-          const canvas = document.createElement('canvas');
-          canvas.style.cssText = 'width:100%;height:100%;display:block;touch-action:none;';
-          canvas.width = Math.round(oW * dpr);
-          canvas.height = Math.round(oH * dpr);
-          canvas.className = 'cursor-crosshair';
-          overlay.appendChild(canvas);
+          overlay.className += ' border-2 border-dashed border-purple-400 bg-purple-50 bg-opacity-30 cursor-pointer';
+          overlay.style.display = 'flex';
+          overlay.style.alignItems = 'center';
+          overlay.style.justifyContent = 'center';
 
-          // Label + Clear button row
+          // Preview image (shown after signing)
+          const preview = document.createElement('img');
+          preview.style.cssText = 'width:100%;height:100%;object-fit:contain;display:none;';
+          preview.dataset.role = 'sig-preview';
+          overlay.appendChild(preview);
+
+          // "Tap to sign" label (shown before signing)
+          const tapLabel = document.createElement('span');
+          tapLabel.style.cssText = 'font-size:9px;color:#7c3aed;pointer-events:none;text-align:center;';
+          tapLabel.textContent = 'Tap to sign';
+          tapLabel.dataset.role = 'tap-label';
+          overlay.appendChild(tapLabel);
+
+          // If already has saved signature data, show preview
+          if (zoneSigData[z.id]) {
+            preview.src = zoneSigData[z.id];
+            preview.style.display = 'block';
+            tapLabel.style.display = 'none';
+          }
+
+          // Label row (SIGN HERE + Clear) — outside the box
           const labelRow = document.createElement('div');
           labelRow.style.cssText = 'position:absolute;bottom:-18px;left:0;right:0;display:flex;align-items:center;justify-content:center;gap:6px;';
           const label = document.createElement('span');
@@ -1080,36 +1094,32 @@
           clearBtn.className = 'text-gray-400 hover:text-red-500 transition-colors';
           clearBtn.style.cssText = 'font-size:9px;line-height:1;padding:1px 4px;border:1px solid #d1d5db;border-radius:3px;background:white;';
           clearBtn.textContent = 'Clear';
-          clearBtn.dataset.zoneId = z.id;
           labelRow.appendChild(clearBtn);
           overlay.appendChild(labelRow);
 
+          // Tap to open signature modal
+          overlay.addEventListener('click', () => openSigModal(itemId, z.id, z.label));
+
+          // Clear button
+          clearBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            delete zoneSigData[z.id];
+            preview.style.display = 'none';
+            tapLabel.style.display = '';
+            checkZoneCompletion(itemId);
+          });
+
           canvasWrap.appendChild(overlay);
-          const sigPad = new SignaturePad(canvas, {
-            backgroundColor: 'rgba(0,0,0,0)',
-            penColor: '#1a1a2e',
-            minWidth: 0.5,
-            maxWidth: 1.5,
-          });
-          sigPad.addEventListener('endStroke', () => {
-            checkZoneCompletion(itemId);
-            autoSaveSignatureZone(itemId, z.id, sigPad, overlay);
-          });
-          zoneSigPads[z.id] = sigPad;
-          clearBtn.addEventListener('click', () => {
-            sigPad.clear();
-            checkZoneCompletion(itemId);
-          });
         } else if (z.zone_type === 'text') {
           overlay.className += ' border-2 border-blue-300 bg-blue-50 bg-opacity-50 zone-saved';
           overlay.style.overflow = 'hidden';
+          const fontSize = Math.max(8, Math.floor(oH * 0.6));
           const input = document.createElement('input');
           input.type = 'text';
           input.placeholder = z.label;
           input.value = z.value || '';
           input.dataset.zoneId = z.id;
-          // Force input to fit within zone on mobile (no native padding/margin)
-          input.style.cssText = 'width:100%;height:100%;background:transparent;border:none;outline:none;padding:0 2px;margin:0;font-size:inherit;line-height:1;box-sizing:border-box;-webkit-appearance:none;';
+          input.style.cssText = `width:100%;height:100%;background:transparent;border:none;outline:none;padding:0 2px;margin:0;font-size:${fontSize}px;line-height:1;box-sizing:border-box;-webkit-appearance:none;`;
           input.className = 'zone-input';
           input.addEventListener('input', () => checkZoneCompletion(itemId));
           input.addEventListener('blur', () => autoSaveZone(itemId, z.id, input.value, overlay));
@@ -1118,12 +1128,12 @@
         } else if (z.zone_type === 'date') {
           overlay.className += ' border-2 border-green-300 bg-green-50 bg-opacity-50 zone-saved';
           overlay.style.overflow = 'hidden';
+          const fontSize = Math.max(8, Math.floor(oH * 0.6));
           const input = document.createElement('input');
           input.type = 'date';
           input.value = z.value || '';
           input.dataset.zoneId = z.id;
-          // Force input to fit within zone on mobile
-          input.style.cssText = 'width:100%;height:100%;background:transparent;border:none;outline:none;padding:0 2px;margin:0;font-size:inherit;line-height:1;box-sizing:border-box;-webkit-appearance:none;';
+          input.style.cssText = `width:100%;height:100%;background:transparent;border:none;outline:none;padding:0 2px;margin:0;font-size:${fontSize}px;line-height:1;box-sizing:border-box;-webkit-appearance:none;`;
           input.className = 'zone-input';
           input.addEventListener('change', () => {
             checkZoneCompletion(itemId);
@@ -1191,10 +1201,11 @@
       const zones = itemZones[itemId] || [];
       if (zones.length === 0) return;
 
-      // Enable submit as soon as any signature zone is signed
+      // Enable submit as soon as any signature zone is signed (modal or inline)
       let anySigned = false;
       for (const z of zones) {
         if (z.zone_type === 'signature') {
+          if (zoneSigData[z.id]) { anySigned = true; break; }
           const pad = zoneSigPads[z.id];
           if (pad && !pad.isEmpty()) { anySigned = true; break; }
         }
@@ -1241,13 +1252,12 @@
           }
         }
 
-        // Upload signatures
+        // Upload signatures (from modal data or inline pads)
         for (const z of zones) {
           if (z.zone_type === 'signature') {
-            const pad = zoneSigPads[z.id];
-            if (pad && !pad.isEmpty()) {
+            const dataUrl = zoneSigData[z.id] || (zoneSigPads[z.id] && !zoneSigPads[z.id].isEmpty() ? zoneSigPads[z.id].toDataURL('image/png') : null);
+            if (dataUrl) {
               statusEl.textContent = `Uploading signature (${z.label})...`;
-              const dataUrl = pad.toDataURL('image/png');
               const res = await fetch(`/portal/r/${TOKEN}/items/${itemId}/upload-sig`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1277,6 +1287,126 @@
         btn.style.opacity = '0.9';
       }
     }
+    // -----------------------------------------------------------------------
+    // Signature modal — opens full-screen signing pad on tap
+    // -----------------------------------------------------------------------
+
+    function ensureSigModal() {
+      if (document.getElementById('sig-modal')) return;
+      const modal = document.createElement('div');
+      modal.id = 'sig-modal';
+      modal.style.cssText = 'display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:16px;';
+      modal.innerHTML = `
+        <div style="background:white;border-radius:12px;width:100%;max-width:500px;padding:20px;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+          <p id="sig-modal-title" style="font-size:14px;font-weight:600;color:#374151;margin-bottom:12px;text-align:center;">Sign below</p>
+          <div style="border:2px dashed #a78bfa;border-radius:8px;background:#faf5ff;overflow:hidden;">
+            <canvas id="sig-modal-canvas" style="width:100%;height:150px;display:block;touch-action:none;"></canvas>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:16px;justify-content:center;">
+            <button type="button" id="sig-modal-clear" style="padding:8px 20px;border:1px solid #d1d5db;border-radius:8px;background:white;color:#374151;font-size:14px;cursor:pointer;">Clear</button>
+            <button type="button" id="sig-modal-cancel" style="padding:8px 20px;border:1px solid #d1d5db;border-radius:8px;background:white;color:#6b7280;font-size:14px;cursor:pointer;">Cancel</button>
+            <button type="button" id="sig-modal-done" style="padding:8px 24px;border:none;border-radius:8px;background:#7c3aed;color:white;font-size:14px;font-weight:600;cursor:pointer;">Done</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+
+      document.getElementById('sig-modal-clear').addEventListener('click', () => {
+        if (sigModalState?.pad) sigModalState.pad.clear();
+      });
+      document.getElementById('sig-modal-cancel').addEventListener('click', () => {
+        closeSigModal(false);
+      });
+      document.getElementById('sig-modal-done').addEventListener('click', () => {
+        closeSigModal(true);
+      });
+    }
+
+    function openSigModal(itemId, zoneId, label) {
+      ensureSigModal();
+      const modal = document.getElementById('sig-modal');
+      const canvas = document.getElementById('sig-modal-canvas');
+      const title = document.getElementById('sig-modal-title');
+      title.textContent = label || 'Sign below';
+
+      modal.style.display = 'flex';
+
+      // Size canvas buffer for HiDPI
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.round(rect.width * dpr);
+      canvas.height = Math.round(rect.height * dpr);
+
+      const pad = new SignaturePad(canvas, {
+        backgroundColor: 'rgba(0,0,0,0)',
+        penColor: '#1a1a2e',
+        minWidth: 1,
+        maxWidth: 2.5,
+      });
+
+      // If already signed, load existing signature
+      if (zoneSigData[zoneId]) {
+        pad.fromDataURL(zoneSigData[zoneId], { width: canvas.width, height: canvas.height });
+      }
+
+      sigModalState = { itemId, zoneId, pad };
+    }
+
+    function closeSigModal(save) {
+      const modal = document.getElementById('sig-modal');
+      if (!modal || !sigModalState) return;
+
+      if (save && sigModalState.pad && !sigModalState.pad.isEmpty()) {
+        const dataUrl = sigModalState.pad.toDataURL('image/png');
+        const { itemId, zoneId } = sigModalState;
+        zoneSigData[zoneId] = dataUrl;
+
+        // Update preview in the zone overlay
+        const overlay = document.querySelector(`[data-zone-id="${zoneId}"]`);
+        if (overlay) {
+          const preview = overlay.querySelector('[data-role="sig-preview"]');
+          const tapLabel = overlay.querySelector('[data-role="tap-label"]');
+          if (preview) { preview.src = dataUrl; preview.style.display = 'block'; }
+          if (tapLabel) tapLabel.style.display = 'none';
+        }
+
+        // Auto-save the signature to server
+        autoSaveSignatureFromData(itemId, zoneId, dataUrl, overlay);
+        checkZoneCompletion(itemId);
+      }
+
+      // Clean up
+      if (sigModalState.pad) { sigModalState.pad.off(); }
+      sigModalState = null;
+      modal.style.display = 'none';
+    }
+
+    async function autoSaveSignatureFromData(itemId, zoneId, dataUrl, overlay) {
+      try {
+        if (overlay) overlay.classList?.add('zone-saving');
+        const res = await fetch(`/portal/r/${TOKEN}/items/${itemId}/upload-sig`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: dataUrl }),
+        });
+        if (!res.ok) throw new Error('sig upload failed');
+        const { file_key } = await res.json();
+        await fetch(`/portal/r/${TOKEN}/items/${itemId}/zones/save-draft`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ zone_id: zoneId, signature_file_key: file_key }),
+        });
+        if (overlay) {
+          overlay.classList?.remove('zone-saving');
+          overlay.classList?.add('zone-saved-ok');
+          setTimeout(() => overlay.classList?.remove('zone-saved-ok'), 1500);
+        }
+      } catch (e) {
+        if (overlay) overlay.classList?.remove('zone-saving');
+        console.error('Auto-save signature failed', e);
+      }
+    }
+
   </script>
 </body>
 </html>
