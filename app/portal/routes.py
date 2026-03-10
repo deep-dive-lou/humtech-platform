@@ -232,7 +232,7 @@ async def client_portal_view(
         item["zones"] = zones_by_item.get(str(item["id"]), [])
 
     brand = await get_tenant_brand(conn, str(tok["tenant_id"]))
-    return templates.TemplateResponse("client.html", {
+    resp = templates.TemplateResponse("client.html", {
         "request": request,
         "error": None,
         "req": dict(req),
@@ -240,6 +240,9 @@ async def client_portal_view(
         "token": token,
         "brand": brand,
     })
+    # Prevent mobile browsers from caching stale portal HTML
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return resp
 
 
 # ---------------------------------------------------------------------------

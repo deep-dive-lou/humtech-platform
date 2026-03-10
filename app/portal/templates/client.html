@@ -615,8 +615,8 @@
         // Set wrapper explicit dimensions so the container scrolls correctly
         const realH = parseFloat(canvas.style.height);
         const realW = parseFloat(canvas.style.width);
-        canvasWrap.style.width = realW + 'px';
-        canvasWrap.style.height = realH + 'px';
+        canvasWrap.style.setProperty('width', realW + 'px', 'important');
+        canvasWrap.style.setProperty('height', realH + 'px', 'important');
         // Margins expand the layout box so the scroll container can scroll
         canvasWrap.style.marginRight = (realW * Math.max(0, next - 1)) + 'px';
         canvasWrap.style.marginBottom = (realH * Math.max(0, next - 1)) + 'px';
@@ -1003,16 +1003,18 @@
       const scale = desiredWidth / unscaled.width;
       const viewport = page.getViewport({ scale });
 
-      // HiDPI canvas — sized to fit container exactly
+      // HiDPI canvas — force dimensions with !important to prevent any CSS override
       const cssW = Math.floor(viewport.width);
       const cssH = Math.floor(viewport.height);
       pdfCanvas.width = Math.round(cssW * dpr);
       pdfCanvas.height = Math.round(cssH * dpr);
-      pdfCanvas.style.width = cssW + 'px';
-      pdfCanvas.style.height = cssH + 'px';
-      // Also set canvasWrap to exact size so zones position correctly
-      canvasWrap.style.width = cssW + 'px';
-      canvasWrap.style.height = cssH + 'px';
+      pdfCanvas.style.setProperty('width', cssW + 'px', 'important');
+      pdfCanvas.style.setProperty('height', cssH + 'px', 'important');
+      pdfCanvas.style.setProperty('max-width', 'none', 'important');
+      pdfCanvas.style.setProperty('max-height', 'none', 'important');
+      canvasWrap.style.setProperty('width', cssW + 'px', 'important');
+      canvasWrap.style.setProperty('height', cssH + 'px', 'important');
+      canvasWrap.style.setProperty('position', 'relative', 'important');
 
       const ctx = pdfCanvas.getContext('2d');
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1025,12 +1027,15 @@
       document.getElementById(`pdf-prev-${itemId}`).disabled = (pageNum <= 1);
       document.getElementById(`pdf-next-${itemId}`).disabled = (pageNum >= state.numPages);
 
-      // Render zone overlays for this page
-      // Use known CSS dimensions (not offsetWidth which can be affected by max-width)
+      // Wait for browser to complete layout + paint before positioning zones
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+      // Measure ACTUAL rendered canvas dimensions (most reliable on all devices)
+      const canvasRect = pdfCanvas.getBoundingClientRect();
       const zones = itemZones[itemId] || [];
       const pageZones = zones.filter(z => z.page === pageNum - 1);
-      const displayW = cssW;
-      const displayH = cssH;
+      const displayW = canvasRect.width;
+      const displayH = canvasRect.height;
 
       for (const z of pageZones) {
         const oX = z.x / 100 * displayW;
