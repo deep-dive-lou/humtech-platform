@@ -1626,6 +1626,8 @@ async def staff_request_detail(
         "brand": brand,
         "all_approved": all_approved,
         "email_enabled": email_enabled,
+        "client_email": req["client_email"] or "",
+        "sending_from_email": (email_cfg["sending_from_email"] or "") if email_cfg else "",
         "audit_events": [dict(e) for e in audit_events],
     })
 
@@ -1829,15 +1831,134 @@ async def send_email_to_client(
     await conn.execute(
         """
         INSERT INTO portal.email_sends
-            (tenant_id, request_id, recipient_email, from_email, subject, ses_message_id)
-        VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6)
+            (tenant_id, request_id, recipient_email, from_email, subject, ses_message_id, html_body, email_type)
+        VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, 'magic_link')
         """,
         staff["tenant_id"], request_id,
         row["client_email"], row["sending_from_email"],
-        subject, ses_message_id,
+        subject, ses_message_id, html_body,
     )
     await log_audit(
         conn, tenant_id=staff["tenant_id"], event_type="magic_link_emailed",
+        actor="staff", actor_id=staff["staff_id"], request_id=request_id,
+    )
+
+    return {"success": True, "email": row["client_email"]}
+
+
+# ---------------------------------------------------------------------------
+# Email log + compose (AJAX)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/requests/{request_id}/emails")
+async def list_request_emails(
+    request_id: str,
+    staff: dict = Depends(require_staff),
+    conn: asyncpg.Connection = Depends(get_conn),
+):
+    """Return email history for a request as JSON."""
+    rows = await conn.fetch(
+        """
+        SELECT id, email_type, recipient_email, from_email, subject,
+               html_body, ses_message_id, sent_at
+        FROM portal.email_sends
+        WHERE request_id = $1::uuid AND tenant_id = $2::uuid
+        ORDER BY sent_at DESC
+        """,
+        request_id, staff["tenant_id"],
+    )
+    return [
+        {
+            "id": str(r["id"]),
+            "email_type": r["email_type"],
+            "recipient_email": r["recipient_email"],
+            "from_email": r["from_email"],
+            "subject": r["subject"],
+            "html_body": r["html_body"],
+            "sent_at": r["sent_at"].isoformat() if r["sent_at"] else None,
+        }
+        for r in rows
+    ]
+
+
+@router.post("/requests/{request_id}/compose-email")
+async def compose_email(
+    request_id: str,
+    body: dict = Body(...),
+    staff: dict = Depends(require_staff),
+    conn: asyncpg.Connection = Depends(get_conn),
+):
+    """Compose and send a custom email to the client for this request."""
+    subject = (body.get("subject") or "").strip()
+    body_text = (body.get("body_text") or "").strip()
+    include_magic_link = body.get("include_magic_link", True)
+
+    if not subject or not body_text:
+        return JSONResponse({"error": "Subject and body are required."}, status_code=400)
+
+    row = await conn.fetchrow(
+        """
+        SELECT r.id, r.due_at,
+               c.full_name AS client_name, c.email AS client_email,
+               t.sending_from_email, t.domain_verified,
+               t.brand_name, t.brand_color, t.logo_url
+        FROM portal.doc_requests r
+        JOIN portal.clients c ON c.id = r.client_id
+        JOIN portal.tenants t ON t.id = r.tenant_id
+        WHERE r.id = $1::uuid AND r.tenant_id = $2::uuid
+        """,
+        request_id, staff["tenant_id"],
+    )
+    if not row:
+        return JSONResponse({"error": "Request not found"}, status_code=404)
+    if not row["domain_verified"] or not row["sending_from_email"]:
+        return JSONResponse(
+            {"error": "Email not configured. Go to Settings → Email to set up your sending domain."},
+            status_code=400,
+        )
+
+    magic_link = ""
+    if include_magic_link:
+        async with conn.transaction():
+            raw_token, _ = await _create_access_token(
+                conn, staff["tenant_id"], request_id, staff["staff_id"],
+            )
+        magic_link = f"{settings.portal_base_url}/portal/r/{raw_token}/view"
+
+    brand_name = row["brand_name"] or "HumTech"
+    client_name = (row["client_name"] or "").split()[0] if row["client_name"] else "there"
+    due_str = row["due_at"].strftime("%d %b %Y") if row["due_at"] else None
+
+    html_body = render_email(
+        client_name=client_name,
+        magic_link=magic_link,
+        due_date=due_str,
+        body_text=body_text,
+        brand_name=brand_name,
+        brand_color=row["brand_color"] or "#111827",
+        logo_url=row["logo_url"],
+    )
+
+    ses_message_id = send_email(
+        to_email=row["client_email"],
+        from_email=row["sending_from_email"],
+        subject=subject,
+        html_body=html_body,
+    )
+
+    await conn.execute(
+        """
+        INSERT INTO portal.email_sends
+            (tenant_id, request_id, recipient_email, from_email, subject, ses_message_id, html_body, email_type)
+        VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, 'custom')
+        """,
+        staff["tenant_id"], request_id,
+        row["client_email"], row["sending_from_email"],
+        subject, ses_message_id, html_body,
+    )
+    await log_audit(
+        conn, tenant_id=staff["tenant_id"], event_type="custom_email_sent",
         actor="staff", actor_id=staff["staff_id"], request_id=request_id,
     )
 
