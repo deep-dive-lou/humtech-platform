@@ -1336,6 +1336,9 @@ async def bulk_action(
         eligible_ids = [str(row["id"]) for row in eligible]
         if eligible_ids:
             for rid in eligible_ids:
+                await conn.execute("DELETE FROM portal.email_sends WHERE request_id = $1::uuid", rid)
+                await conn.execute("DELETE FROM portal.audit_events WHERE request_id = $1::uuid", rid)
+                await conn.execute("DELETE FROM portal.client_tokens WHERE request_id = $1::uuid", rid)
                 await conn.execute("DELETE FROM portal.files WHERE request_id = $1::uuid", rid)
                 await conn.execute("DELETE FROM portal.doc_request_items WHERE request_id = $1::uuid", rid)
                 await conn.execute(
@@ -2219,6 +2222,9 @@ async def delete_request(
     if not req:
         return JSONResponse({"error": "Request not found"}, status_code=404)
 
+    await conn.execute("DELETE FROM portal.email_sends WHERE request_id = $1::uuid", request_id)
+    await conn.execute("DELETE FROM portal.audit_events WHERE request_id = $1::uuid", request_id)
+    await conn.execute("DELETE FROM portal.client_tokens WHERE request_id = $1::uuid", request_id)
     await conn.execute("DELETE FROM portal.files WHERE request_id = $1::uuid", request_id)
     await conn.execute("DELETE FROM portal.doc_request_items WHERE request_id = $1::uuid", request_id)
     await conn.execute(
