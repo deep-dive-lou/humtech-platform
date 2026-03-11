@@ -13,21 +13,22 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from _metabase import (
-    TENANT_ID, require_key, create_question, create_dashboard,
+    TENANT_ID, TENANT_NAME, BASELINE_LABEL as _BASELINE_LABEL,
+    require_key, create_question, create_dashboard,
     wire_cards, dashboard_exists, make_date_tags,
 )
 
 COLLECTION_ID = int(os.getenv("METABASE_COLLECTION_ID", "5"))
-DASHBOARD_NAME = "RESG: Revenue Delta"
+DASHBOARD_NAME = f"{TENANT_NAME}: Revenue Delta"
 T = TENANT_ID
 
 # The active baseline label — adjust per client
-BASELINE_LABEL = os.getenv("BASELINE_LABEL", "resg_crm_pre_humtech")
+BASELINE_LABEL = os.getenv("BASELINE_LABEL", _BASELINE_LABEL)
 
 QUESTIONS = [
     # Row 1 — THE numbers
     {
-        "name": "RESG Delta: Revenue Change (£)",
+        "name": f"{TENANT_NAME} Delta: Revenue Change (£)",
         "display": "scalar",
         "sql": f"""
 WITH baseline AS (
@@ -63,7 +64,7 @@ FROM baseline b, current_rev c
         "date_filter": True,
     },
     {
-        "name": "RESG Delta: HumTech Fee This Quarter (£)",
+        "name": f"{TENANT_NAME} Delta: HumTech Fee This Quarter (£)",
         "display": "scalar",
         "sql": f"""
 -- Fee = revenue_delta * fee_percentage
@@ -118,7 +119,7 @@ FROM baseline b, current_rev c, fee_pct f
         "date_filter": True,
     },
     {
-        "name": "RESG Delta: Current Fee Tier",
+        "name": f"{TENANT_NAME} Delta: Current Fee Tier",
         "display": "scalar",
         "sql": f"""
 WITH engagement AS (
@@ -146,7 +147,7 @@ FROM engagement e
     },
     # Row 2 — CRM leading indicators
     {
-        "name": "RESG Delta: Win Rate Change",
+        "name": f"{TENANT_NAME} Delta: Win Rate Change",
         "display": "scalar",
         "sql": f"""
 WITH baseline AS (
@@ -174,7 +175,38 @@ FROM baseline b, current_val c
         "date_filter": True,
     },
     {
-        "name": "RESG Delta: Rejection Rate Change",
+        "name": f"{TENANT_NAME} Delta: Competitive Win Rate Change",
+        "display": "scalar",
+        "sql": f"""
+WITH baseline AS (
+    SELECT COALESCE(
+        (metrics->>'competitive_win_rate')::numeric,
+        (metrics->>'win_rate')::numeric
+    ) * 100 AS val
+    FROM engine.baselines
+    WHERE tenant_id = '{T}'::uuid
+      AND label = '{BASELINE_LABEL}'
+      AND is_active = TRUE
+),
+current_val AS (
+    SELECT round(
+        count(*) FILTER (WHERE current_stage = 'won')::numeric
+        / NULLIF(count(*) FILTER (WHERE current_stage IN ('won', 'lost')), 0) * 100, 1
+    ) AS val
+    FROM engine.leads
+    WHERE tenant_id = '{T}'::uuid
+    [[AND created_at >= {{{{start_date}}}}::timestamp]]
+    [[AND created_at <= {{{{end_date}}}}::timestamp]]
+)
+SELECT
+    COALESCE(round(c.val - b.val, 1), 0) AS "Competitive WR Change (pp)"
+FROM baseline b, current_val c
+""",
+        "viz": {"scalar.field": "Competitive WR Change (pp)", "scalar.suffix": "pp"},
+        "date_filter": True,
+    },
+    {
+        "name": f"{TENANT_NAME} Delta: Rejection Rate Change",
         "display": "scalar",
         "sql": f"""
 WITH baseline AS (
@@ -203,7 +235,7 @@ FROM baseline b, current_val c
     },
     # Row 3 — comparison table
     {
-        "name": "RESG Delta: Baseline vs Current",
+        "name": f"{TENANT_NAME} Delta: Baseline vs Current",
         "display": "table",
         "sql": f"""
 WITH baseline AS (
@@ -249,7 +281,7 @@ FROM baseline b, current_stats c
     },
     # Row 4 — rolling baseline history
     {
-        "name": "RESG Delta: Baseline History",
+        "name": f"{TENANT_NAME} Delta: Baseline History",
         "display": "table",
         "sql": f"""
 SELECT label AS "Baseline",
@@ -275,9 +307,10 @@ LAYOUTS = [
     {"col": 0, "row": 0, "size_x": 6, "size_y": 4},   # Revenue change
     {"col": 6, "row": 0, "size_x": 6, "size_y": 4},   # HumTech fee
     {"col": 12, "row": 0, "size_x": 6, "size_y": 4},  # Fee tier
-    # Row 2 — CRM indicators
-    {"col": 0, "row": 4, "size_x": 9, "size_y": 3},   # Win rate change
-    {"col": 9, "row": 4, "size_x": 9, "size_y": 3},   # Rejection rate change
+    # Row 2 — CRM indicators (3 cards)
+    {"col": 0, "row": 4, "size_x": 6, "size_y": 3},   # Win rate change
+    {"col": 6, "row": 4, "size_x": 6, "size_y": 3},   # Competitive WR change
+    {"col": 12, "row": 4, "size_x": 6, "size_y": 3},  # Rejection rate change
     # Row 3 — comparison table
     {"col": 0, "row": 7, "size_x": 18, "size_y": 7},  # Baseline vs current
     # Row 4 — baseline history

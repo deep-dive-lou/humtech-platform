@@ -1,6 +1,8 @@
 """Build Stage Leak Analysis dashboard in Metabase.
 
 Shows where leads fall out of the pipeline and estimated revenue cost.
+Stage-weighted leak cost: exits × avg_deal_value × win_probability_from_that_stage
+(Markov absorption probability approximation — see dashboard_methodology.md §5)
 
 Usage:
     METABASE_API_KEY=mb_... METABASE_COLLECTION_ID=<id> python scripts/build_stage_leak_dashboard.py
@@ -10,37 +12,36 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from _metabase import (
-    TENANT_ID, require_key, create_question, create_dashboard,
+    TENANT_ID, TENANT_NAME, require_key, create_question, create_dashboard,
     wire_cards, dashboard_exists, make_date_tags,
 )
 
 COLLECTION_ID = int(os.getenv("METABASE_COLLECTION_ID", "5"))
-DASHBOARD_NAME = "RESG: Stage Leak Analysis"
+DASHBOARD_NAME = f"{TENANT_NAME}: Stage Leak Analysis"
 T = TENANT_ID
 
 QUESTIONS = [
     # Row 1 — biggest leaks bar + leak cost scalar
     {
-        "name": "RESG Leak: Biggest Stage Leaks",
+        "name": f"{TENANT_NAME} Leak: Biggest Stage Leaks",
         "display": "bar",
         "sql": f"""
-SELECT le.from_stage || ' -> ' || le.to_stage AS "Leak Point",
+SELECT le.canonical_stage AS "Exit Type",
        count(*) AS "Leads Lost"
 FROM engine.lead_events le
 WHERE le.tenant_id = '{T}'::uuid
-  AND le.event_type = 'stage_changed'
-  AND le.to_stage IN ('lost', 'rejected')
+  AND le.event_type = 'lead_lost'
 [[AND le.occurred_at >= {{{{start_date}}}}::timestamp]]
 [[AND le.occurred_at <= {{{{end_date}}}}::timestamp]]
-GROUP BY le.from_stage, le.to_stage
+GROUP BY le.canonical_stage
 ORDER BY count(*) DESC
 LIMIT 10
 """,
-        "viz": {"graph.dimensions": ["Leak Point"], "graph.metrics": ["Leads Lost"]},
+        "viz": {"graph.dimensions": ["Exit Type"], "graph.metrics": ["Leads Lost"]},
         "date_filter": True,
     },
     {
-        "name": "RESG Leak: Est. Monthly Leak Cost",
+        "name": f"{TENANT_NAME} Leak: Est. Monthly Leak Cost (Weighted)",
         "display": "scalar",
         "sql": f"""
 WITH baseline AS (
@@ -50,72 +51,126 @@ WITH baseline AS (
       AND is_active = TRUE
     LIMIT 1
 ),
-exits_per_month AS (
-    SELECT round(
-        count(*)::numeric
-        / GREATEST(1, EXTRACT(EPOCH FROM (max(occurred_at) - min(occurred_at))) / 86400 / 30), 1
-    ) AS exits_pm
-    FROM engine.lead_events
-    WHERE tenant_id = '{T}'::uuid
-      AND event_type = 'stage_changed'
-      AND to_stage IN ('lost', 'rejected')
-    [[AND occurred_at >= {{{{start_date}}}}::timestamp]]
-    [[AND occurred_at <= {{{{end_date}}}}::timestamp]]
+-- Win probability from each stage: what fraction of leads that reached
+-- this stage eventually won? (at-or-beyond approximation)
+stage_wins AS (
+    SELECT sm.canonical_stage,
+           count(DISTINCT le.lead_id) AS reached,
+           count(DISTINCT le.lead_id) FILTER (
+               WHERE l.current_stage = 'lead_won'
+           ) AS won
+    FROM engine.lead_events le
+    JOIN engine.leads l ON l.lead_id = le.lead_id
+    LEFT JOIN engine.stage_mappings sm
+        ON sm.tenant_id = le.tenant_id
+        AND sm.canonical_stage = le.canonical_stage
+        AND sm.is_active = TRUE
+    WHERE le.tenant_id = '{T}'::uuid
+      AND le.canonical_stage IS NOT NULL
+    GROUP BY sm.canonical_stage
+),
+win_prob AS (
+    SELECT canonical_stage,
+           CASE WHEN reached > 0 THEN won::numeric / reached ELSE 0 END AS win_probability
+    FROM stage_wins
+),
+-- Exits per stage per month
+exits AS (
+    SELECT le.canonical_stage,
+           count(*) AS exit_count,
+           GREATEST(1, EXTRACT(EPOCH FROM (max(le.occurred_at) - min(le.occurred_at))) / 86400 / 30) AS months
+    FROM engine.lead_events le
+    WHERE le.tenant_id = '{T}'::uuid
+      AND le.event_type = 'lead_lost'
+    [[AND le.occurred_at >= {{{{start_date}}}}::timestamp]]
+    [[AND le.occurred_at <= {{{{end_date}}}}::timestamp]]
+    GROUP BY le.canonical_stage
 )
-SELECT round(e.exits_pm * b.avg_val, 0) AS "Est. Monthly Leak"
-FROM exits_per_month e, baseline b
+SELECT round(sum(
+    (e.exit_count::numeric / e.months)
+    * b.avg_val
+    * COALESCE(wp.win_probability, 0)
+), 0) AS "Est. Monthly Leak"
+FROM exits e
+CROSS JOIN baseline b
+LEFT JOIN win_prob wp ON wp.canonical_stage = e.canonical_stage
 """,
         "viz": {"scalar.field": "Est. Monthly Leak", "scalar.prefix": "£"},
         "date_filter": True,
     },
-    # Row 2 — leak detail table
+    # Row 2 — leak detail table (stage-weighted)
     {
-        "name": "RESG Leak: Detail by Stage",
+        "name": f"{TENANT_NAME} Leak: Detail by Stage (Weighted)",
         "display": "table",
         "sql": f"""
 WITH baseline AS (
-    SELECT COALESCE((metrics->>'avg_deal_value_gbp')::numeric, 0) AS avg_val,
-           GREATEST(1, (metrics->>'period_days')::numeric) AS period_days
+    SELECT COALESCE((metrics->>'avg_deal_value_gbp')::numeric, 0) AS avg_val
     FROM engine.baselines
     WHERE tenant_id = '{T}'::uuid
       AND is_active = TRUE
     LIMIT 1
 ),
+stage_wins AS (
+    SELECT le.canonical_stage,
+           count(DISTINCT le.lead_id) AS reached,
+           count(DISTINCT le.lead_id) FILTER (
+               WHERE l.current_stage = 'lead_won'
+           ) AS won
+    FROM engine.lead_events le
+    JOIN engine.leads l ON l.lead_id = le.lead_id
+    WHERE le.tenant_id = '{T}'::uuid
+      AND le.canonical_stage IS NOT NULL
+    GROUP BY le.canonical_stage
+),
+win_prob AS (
+    SELECT canonical_stage,
+           CASE WHEN reached > 0 THEN won::numeric / reached ELSE 0 END AS win_probability
+    FROM stage_wins
+),
 exits AS (
-    SELECT le.from_stage,
-           le.to_stage,
+    SELECT le.canonical_stage,
            count(*) AS exit_count
     FROM engine.lead_events le
     WHERE le.tenant_id = '{T}'::uuid
-      AND le.event_type = 'stage_changed'
-      AND le.to_stage IN ('lost', 'rejected')
+      AND le.event_type = 'lead_lost'
     [[AND le.occurred_at >= {{{{start_date}}}}::timestamp]]
     [[AND le.occurred_at <= {{{{end_date}}}}::timestamp]]
-    GROUP BY le.from_stage, le.to_stage
+    GROUP BY le.canonical_stage
+),
+period AS (
+    SELECT GREATEST(1, EXTRACT(EPOCH FROM (max(occurred_at) - min(occurred_at))) / 86400 / 30) AS months
+    FROM engine.lead_events
+    WHERE tenant_id = '{T}'::uuid
+      AND event_type = 'lead_lost'
+    [[AND occurred_at >= {{{{start_date}}}}::timestamp]]
+    [[AND occurred_at <= {{{{end_date}}}}::timestamp]]
 )
-SELECT e.from_stage AS "From Stage",
-       e.to_stage AS "Exit Type",
+SELECT e.canonical_stage AS "Exit Stage",
        e.exit_count AS "Total Exits",
-       round(e.exit_count::numeric / (b.period_days / 30), 1) AS "Exits/Month",
-       round(e.exit_count::numeric / (b.period_days / 30) * b.avg_val, 0) AS "Est. Cost/Month (GBP)"
-FROM exits e, baseline b
-ORDER BY e.exit_count DESC
+       round(e.exit_count::numeric / p.months, 1) AS "Exits/Month",
+       round(COALESCE(wp.win_probability, 0) * 100, 1) AS "Win Prob from Stage (%)",
+       round(e.exit_count::numeric / p.months * b.avg_val, 0) AS "Unweighted Cost/Month (£)",
+       round(e.exit_count::numeric / p.months * b.avg_val * COALESCE(wp.win_probability, 0), 0) AS "Weighted Cost/Month (£)"
+FROM exits e
+CROSS JOIN baseline b
+CROSS JOIN period p
+LEFT JOIN win_prob wp ON wp.canonical_stage = e.canonical_stage
+ORDER BY round(e.exit_count::numeric / p.months * b.avg_val * COALESCE(wp.win_probability, 0), 0) DESC
 """,
         "viz": {},
         "date_filter": True,
     },
     # Row 3 — leak trend over time
     {
-        "name": "RESG Leak: Trend Over Time",
+        "name": f"{TENANT_NAME} Leak: Trend Over Time",
         "display": "line",
         "sql": f"""
 SELECT date_trunc('month', occurred_at)::date AS "Month",
-       to_stage AS "Exit Type",
+       canonical_stage AS "Exit Type",
        count(*) AS "Exits"
 FROM engine.lead_events
 WHERE tenant_id = '{T}'::uuid
-  AND event_type = 'stage_changed'
-  AND to_stage IN ('lost', 'rejected')
+  AND event_type = 'lead_lost'
 [[AND occurred_at >= {{{{start_date}}}}::timestamp]]
 [[AND occurred_at <= {{{{end_date}}}}::timestamp]]
 GROUP BY 1, 2

@@ -10,6 +10,11 @@ MB_KEY = os.getenv("METABASE_API_KEY", "")
 DB_ID = int(os.getenv("METABASE_DB_ID", "3"))
 TENANT_ID = os.getenv("TENANT_ID", "c545b164-9aad-4edb-a3ba-8820fb5a8037")
 
+# Tenant parameterisation — set TENANT_SLUG to drive naming
+TENANT_SLUG = os.getenv("TENANT_SLUG", "resg")
+TENANT_NAME = os.getenv("TENANT_NAME", TENANT_SLUG.upper())
+BASELINE_LABEL = os.getenv("BASELINE_LABEL", f"{TENANT_SLUG}_crm_pre_humtech")
+
 _headers = {"x-api-key": MB_KEY, "Content-Type": "application/json"}
 
 

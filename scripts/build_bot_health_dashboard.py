@@ -10,18 +10,18 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from _metabase import (
-    TENANT_ID, require_key, create_question, create_dashboard,
+    TENANT_ID, TENANT_NAME, require_key, create_question, create_dashboard,
     wire_cards, dashboard_exists, make_date_tags,
 )
 
 COLLECTION_ID = int(os.getenv("METABASE_COLLECTION_ID", "5"))
-DASHBOARD_NAME = "RESG: Bot Health"
+DASHBOARD_NAME = f"{TENANT_NAME}: Bot Health"
 T = TENANT_ID
 
 QUESTIONS = [
     # Row 1 — scalars
     {
-        "name": "RESG Bot: Conversations Today",
+        "name": f"{TENANT_NAME} Bot: Conversations Today",
         "display": "scalar",
         "sql": f"""
 SELECT count(*) AS "Today"
@@ -33,7 +33,7 @@ WHERE tenant_id = '{T}'::uuid
         "date_filter": False,
     },
     {
-        "name": "RESG Bot: Conversations This Week",
+        "name": f"{TENANT_NAME} Bot: Conversations This Week",
         "display": "scalar",
         "sql": f"""
 SELECT count(*) AS "This Week"
@@ -45,7 +45,7 @@ WHERE tenant_id = '{T}'::uuid
         "date_filter": False,
     },
     {
-        "name": "RESG Bot: Booking Rate",
+        "name": f"{TENANT_NAME} Bot: Booking Rate",
         "display": "scalar",
         "sql": f"""
 SELECT round(
@@ -61,7 +61,7 @@ WHERE tenant_id = '{T}'::uuid
         "date_filter": True,
     },
     {
-        "name": "RESG Bot: Avg Turns to Book",
+        "name": f"{TENANT_NAME} Bot: Avg Turns to Book",
         "display": "scalar",
         "sql": f"""
 SELECT round(avg(inbound_turns)::numeric, 1) AS "Avg Turns"
@@ -75,12 +75,13 @@ WHERE tenant_id = '{T}'::uuid
         "date_filter": True,
     },
     {
-        "name": "RESG Bot: Failed Sends (24h)",
+        "name": f"{TENANT_NAME} Bot: Failed Sends (24h)",
         "display": "scalar",
-        "sql": """
+        "sql": f"""
 SELECT count(*) AS "Failed"
 FROM monitoring.send_health
-WHERE send_status = 'failed'
+WHERE tenant_id = '{T}'::uuid
+  AND send_status = 'failed'
   AND created_at >= now() - interval '24 hours'
 """,
         "viz": {"scalar.field": "Failed"},
@@ -88,15 +89,16 @@ WHERE send_status = 'failed'
     },
     # Row 2 — charts
     {
-        "name": "RESG Bot: Intent Distribution",
+        "name": f"{TENANT_NAME} Bot: Intent Distribution",
         "display": "bar",
-        "sql": """
+        "sql": f"""
 SELECT intent AS "Intent",
        sum(count) AS "Count"
 FROM monitoring.intent_distribution
-WHERE intent IS NOT NULL
-[[AND day >= {{start_date}}::date]]
-[[AND day <= {{end_date}}::date]]
+WHERE tenant_id = '{T}'::uuid
+  AND intent IS NOT NULL
+[[AND day >= {{{{start_date}}}}::date]]
+[[AND day <= {{{{end_date}}}}::date]]
 GROUP BY intent
 ORDER BY sum(count) DESC
 """,
@@ -104,9 +106,9 @@ ORDER BY sum(count) DESC
         "date_filter": True,
     },
     {
-        "name": "RESG Bot: Daily Funnel",
+        "name": f"{TENANT_NAME} Bot: Daily Funnel",
         "display": "line",
-        "sql": """
+        "sql": f"""
 SELECT day AS "Day",
        total_conversations AS "Total",
        booked AS "Booked",
@@ -114,8 +116,9 @@ SELECT day AS "Day",
        wants_human AS "Wants Human",
        engaged AS "Engaged"
 FROM monitoring.daily_funnel
-[[WHERE day >= {{start_date}}::date]]
-[[AND day <= {{end_date}}::date]]
+WHERE tenant_id = '{T}'::uuid
+[[AND day >= {{{{start_date}}}}::date]]
+[[AND day <= {{{{end_date}}}}::date]]
 ORDER BY day
 """,
         "viz": {
@@ -126,9 +129,9 @@ ORDER BY day
     },
     # Row 3 — table
     {
-        "name": "RESG Bot: Active Alerts",
+        "name": f"{TENANT_NAME} Bot: Active Alerts",
         "display": "table",
-        "sql": """
+        "sql": f"""
 SELECT contact_name AS "Contact",
        alert_type AS "Alert",
        last_intent AS "Last Intent",
@@ -137,7 +140,8 @@ SELECT contact_name AS "Contact",
        status AS "Status",
        last_inbound_at AS "Last Inbound"
 FROM monitoring.active_alerts
-WHERE alert_type IS NOT NULL
+WHERE tenant_id = '{T}'::uuid
+  AND alert_type IS NOT NULL
 ORDER BY
   CASE alert_type
     WHEN 'wants_human' THEN 1
