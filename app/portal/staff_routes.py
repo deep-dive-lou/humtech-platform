@@ -1336,11 +1336,8 @@ async def bulk_action(
         eligible_ids = [str(row["id"]) for row in eligible]
         if eligible_ids:
             for rid in eligible_ids:
+                # email_sends has NO ACTION FK — must delete manually; all others CASCADE
                 await conn.execute("DELETE FROM portal.email_sends WHERE request_id = $1::uuid", rid)
-                await conn.execute("DELETE FROM portal.audit_events WHERE request_id = $1::uuid", rid)
-                await conn.execute("DELETE FROM portal.client_tokens WHERE request_id = $1::uuid", rid)
-                await conn.execute("DELETE FROM portal.files WHERE request_id = $1::uuid", rid)
-                await conn.execute("DELETE FROM portal.doc_request_items WHERE request_id = $1::uuid", rid)
                 await conn.execute(
                     "DELETE FROM portal.doc_requests WHERE id = $1::uuid AND tenant_id = $2::uuid",
                     rid, staff["tenant_id"],
@@ -2222,11 +2219,8 @@ async def delete_request(
     if not req:
         return JSONResponse({"error": "Request not found"}, status_code=404)
 
+    # email_sends has NO ACTION FK — must delete manually; all others CASCADE
     await conn.execute("DELETE FROM portal.email_sends WHERE request_id = $1::uuid", request_id)
-    await conn.execute("DELETE FROM portal.audit_events WHERE request_id = $1::uuid", request_id)
-    await conn.execute("DELETE FROM portal.client_tokens WHERE request_id = $1::uuid", request_id)
-    await conn.execute("DELETE FROM portal.files WHERE request_id = $1::uuid", request_id)
-    await conn.execute("DELETE FROM portal.doc_request_items WHERE request_id = $1::uuid", request_id)
     await conn.execute(
         "DELETE FROM portal.doc_requests WHERE id = $1::uuid AND tenant_id = $2::uuid",
         request_id, staff["tenant_id"],
