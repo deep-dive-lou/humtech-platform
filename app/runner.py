@@ -20,9 +20,10 @@ from datetime import datetime
 from app.config import settings
 from app.db import init_db_pool, close_db_pool, get_pool
 from app.bot.jobs import claim_jobs, mark_done, mark_retry
-from app.bot.processor import process_job
+from app.bot.processor import process_job, process_reengage_job
 from app.bot.sender import send_pending_outbound
 from app.bot.monitor import run_monitor_check
+from app.bot.reengage import check_reengagement
 
 # Logging setup
 logging.basicConfig(
@@ -84,7 +85,10 @@ async def process_loop() -> None:
                         break
                     try:
                         async with conn.transaction():
-                            await process_job(conn, job.job_id)
+                            if job.job_type == "reengage":
+                                await process_reengage_job(conn, job.job_id)
+                            else:
+                                await process_job(conn, job.job_id)
                             await mark_done(conn, job.job_id)
                         processed_count += 1
                     except Exception as e:
@@ -190,6 +194,38 @@ async def monitor_loop() -> None:
     logger.info("monitor_loop shutting down")
 
 
+REENGAGE_CHECK_INTERVAL_SECONDS = int(os.getenv("REENGAGE_CHECK_INTERVAL_SECONDS", "300"))
+
+
+async def reengage_loop() -> None:
+    """Periodically check for stalled conversations and enqueue re-engagement jobs."""
+    global _shutdown_event
+    assert _shutdown_event is not None
+
+    logger.info("reengage_loop started (interval %ds)", REENGAGE_CHECK_INTERVAL_SECONDS)
+
+    while not _shutdown_event.is_set():
+        try:
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    count = await check_reengagement(conn)
+                if count > 0:
+                    logger.info("reengage_loop: enqueued %d re-engagement jobs", count)
+        except Exception as e:
+            logger.error("reengage_loop error: %s", e)
+
+        try:
+            await asyncio.wait_for(
+                _shutdown_event.wait(),
+                timeout=float(REENGAGE_CHECK_INTERVAL_SECONDS),
+            )
+        except asyncio.TimeoutError:
+            pass
+
+    logger.info("reengage_loop shutting down")
+
+
 def _handle_shutdown(signum, frame) -> None:
     """Signal handler for graceful shutdown."""
     global _shutdown_event
@@ -220,6 +256,7 @@ async def main() -> None:
             process_loop(),
             send_loop(),
             monitor_loop(),
+            reengage_loop(),
         )
     finally:
         logger.info("Closing database pool...")

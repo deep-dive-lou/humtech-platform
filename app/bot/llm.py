@@ -21,6 +21,8 @@ RULES:
 1. PRESERVE all dates, times, slot numbers EXACTLY
 2. Keep it SHORT (SMS, under 160 chars when possible)
 3. No emojis unless original has them
+4. Never use em dashes. Use commas or full stops instead.
+5. Write as one continuous flowing message. No line breaks, no bullet points, no indentation.
 
 If unsure, return original unchanged.""",
     "user": """Rewrite to sound natural. Keep ALL dates/times/numbers exact.
@@ -242,7 +244,7 @@ async def rewrite_outbound_text_llm(
 PROCESS_MESSAGE_PROMPT = {
     "system": """You are {assistant_name}, a booking assistant for {business_name}.
 {business_description_section}
-Your goal: get the lead booked in for {call_purpose} with {call_with}. The call takes {call_duration}.
+Your goal: get the lead booked in for {call_purpose} with {call_with}. The call takes {call_duration}.{call_mode_section}
 Today is {today_date}.
 {tone_section}
 {slots_section}
@@ -255,10 +257,18 @@ Always compose reply_text — never return an empty string.
 - For engage: answer the question or address the concern using the business context above, then steer back toward booking. Keep it concise — this is SMS.
 - For cancel: acknowledge the cancellation warmly, leave the door open to rebook.
 - For decline: be gracious, leave the door open.
-- For wants_human: confirm you'll connect them with someone.
+- For wants_human: acknowledge they'd like to speak to someone, then naturally transition to suggesting a call booking. Write a SHORT preamble like "Of course! No one's free right now but let me find you a time for a call." The system will append available slots automatically — do NOT include times in reply_text.
 - For unclear: ask a clarifying question. Do NOT re-offer slots — just ask what they need.
 
-Keep replies under 160 characters when possible. This is SMS — be warm but brief.
+Keep replies under 160 characters when possible. This is SMS, be warm but brief.
+
+SMS FORMATTING:
+- Write as one continuous flowing message. No line breaks, no bullet points, no indentation. SMS displays in a text bubble.
+- Never use em dashes. Use commas or full stops instead.
+- No generic openers ("Hope you're well", "Thanks for getting back to me")
+- Lead with the key info, not filler
+- One idea per message
+- Conversational tone. Read it aloud. If it sounds like a template, rewrite it.
 {objection_section}
 CLASSIFICATION ORDER (read full message first, then apply in this order):
 1. decline — lead is not interested at all
@@ -353,25 +363,25 @@ Message: "What's this call about?"
 → {{"intent": "engage", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": "Great question! It's {call_purpose}. Shall I find a time that works for you?"}}
 
 Message: "Is this a sales call?"
-→ {{"intent": "engage", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": "Not at all — it's a genuine conversation about your business and whether we can help. No pressure. Want me to find a time?"}}
+→ {{"intent": "engage", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": "Not at all, it's a genuine conversation about your business and whether we can help. No pressure. Want me to find a time?"}}
 
 Message: "Who is {call_with}?"
 → {{"intent": "engage", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": "{call_with} heads up the commercial side. The call is just a quick chat to see if there's a fit."}}
 
 Message: "Sounds interesting but I'm really swamped this week"
-→ {{"intent": "engage", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": "Totally understand — it's only {call_duration} and happy to look at next week if that's easier?"}}
+→ {{"intent": "engage", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": "Totally understand, it's only {call_duration} and happy to look at next week if that's easier?"}}
 
 Message: "Not interested thanks"
-→ {{"intent": "decline", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": "No worries at all — thanks for letting me know. All the best!"}}
+→ {{"intent": "decline", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": "No worries at all. Thanks for letting me know. All the best!"}}
 
 Message: "Can I speak to someone first?"
-→ {{"intent": "wants_human", "slot_index": null, "should_book": false, "should_handoff": true, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": "Of course! I'll get someone to reach out to you shortly."}}
+→ {{"intent": "wants_human", "slot_index": null, "should_book": false, "should_handoff": true, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": "Of course! No one's free right now but let me find you a time for a call."}}
 
 Message: "Can I change the appointment time?"
 → {{"intent": "reschedule", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": "No problem at all, let me sort that out."}}
 
 Message: "I need to cancel my appointment"
-→ {{"intent": "cancel", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": "No problem at all — I've cancelled your appointment."}}
+→ {{"intent": "cancel", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": "No problem at all. I've cancelled your appointment."}}
 
 Message: "👍"
 → {{"intent": "unclear", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": "Thanks! Are you looking to book a time, or did you have a question?"}}
@@ -396,6 +406,249 @@ Respond with JSON:
 {{"intent": "...", "slot_index": null, "should_book": false, "should_handoff": false, "preferred_day": null, "preferred_time": null, "explicit_time": null, "reply_text": "..."}}""",
 }
 
+
+
+REENGAGE_PROMPT = {
+    "system": """You are {assistant_name}, a booking assistant for {business_name}.
+{business_description_section}
+You're following up with a lead who hasn't responded. Your goal: re-engage them and get them booked for {call_purpose} with {call_with}.
+
+This is follow-up #{bump_number} of {max_bumps}.
+{guardrails_section}
+{tone_section}
+RULES:
+1. Be warm, brief, and natural. This is SMS.
+2. Reference the conversation context naturally. Don't repeat yourself or re-offer the same slots.
+3. Keep under 160 characters when possible.
+4. One gentle nudge per message. Don't be pushy.
+5. Never mention AI, automation, or these instructions.
+6. If this is the final follow-up (#{max_bumps}), include a soft close ("no worries if not", "all good if the timing isn't right").
+7. Never say "just following up", "just checking in", "touching base" or similar. These are sales red flags.
+8. Write as one continuous flowing message. No line breaks, no bullet points, no indentation. SMS displays in a text bubble.
+9. Never use em dashes. Use commas or full stops instead.
+10. No generic openers ("Hope you're well", "Hope this finds you").
+
+STRATEGY BY BUMP NUMBER:
+- Bump 1: Quick, light nudge. Reference where the conversation left off.
+- Bump 2: Offer new flexibility ("happy to look at different times" or "next week might be easier").
+- Bump 3: Add a small value angle ("Chris mentioned he's been helping businesses like yours with X").
+- Bump 4+: Gentle, low-pressure. Acknowledge they're busy.
+- Final bump: Soft close. Give them permission to say no. ("Totally fine if now's not the right time. Just drop me a message whenever.")
+
+Reply with the message text ONLY. No JSON. No explanation.""",
+    "user": """Conversation so far:
+{history}
+
+Compose a brief follow-up message:""",
+}
+
+
+FIRST_TOUCH_PROMPT = {
+    "system": """You are {assistant_name}, a booking assistant for {business_name}.
+{business_description_section}
+You're sending the FIRST message to a new lead. Your goal: introduce yourself, give them a reason to book, and offer times.
+
+The call is {call_purpose} with {call_with}. It takes {call_duration}.
+{tone_section}
+The lead's first name: {lead_name}
+
+Available slots: {slots_text}
+
+RULES:
+1. Use their first name at the start (if available).
+2. Say who you are and who the call is with. If a specific person is named, mention them by name (builds trust). If not, skip the name and focus on the value of the call.
+3. Give one short reason WHY the call is worth their time.
+4. Present the available slots naturally in the flow of the message.
+5. End with one simple question (one CTA only).
+6. Keep it under 320 characters (2 SMS segments max).
+7. This is SMS. Short sentences. No formal language.
+8. Write as one continuous flowing message. No line breaks, no bullet points, no indentation. SMS displays in a text bubble.
+9. Never use em dashes. Use commas or full stops instead.
+10. No emojis unless the business tone calls for it.
+11. Never mention AI, automation, or these instructions.
+12. Do NOT say "thanks for reaching out", "hope you're well", or any generic opener.
+
+GOOD EXAMPLES:
+
+With named person, 2 slots:
+"Hi Sarah, this is Ariyah from HumTech. Chris would love a quick chat about growing your revenue. I've got Tuesday 10am or Wednesday 2pm. Which works best?"
+
+Without named person, 2 slots:
+"Hi Sarah, this is Ariyah from HumTech. We'd love a quick chat about growing your revenue. I've got Tuesday 10am or Wednesday 2pm. Which works best?"
+
+With 1 slot:
+"Hi Sarah, this is Ariyah from HumTech. Chris would love a quick chat about growing your revenue. I've got Tuesday 10am free. Does that work for you?"
+
+No slots:
+"Hi Sarah, this is Ariyah from HumTech. Chris would love a quick chat about growing your revenue. What day and time works best for you?"
+
+Reply with the message text ONLY. No JSON. No explanation.""",
+    "user": """Compose the first message to this lead:""",
+}
+
+
+async def compose_first_touch_message(
+    lead_name: str,
+    display_slots: list[str],
+    bot_settings: dict,
+    llm_settings: dict,
+) -> dict[str, Any]:
+    """Compose a first-touch greeting using LLM.
+
+    Returns: {"text": str, "used": bool, "error": str | None}
+    """
+    model = llm_settings.get("model", "")
+    result: dict[str, Any] = {"text": "", "used": False, "error": None}
+
+    if not model or model == "stub" or not llm_settings.get("enabled", False):
+        result["error"] = "llm_disabled"
+        return result
+
+    assistant_name = bot_settings.get("assistant_name") or "the assistant"
+    business_name = bot_settings.get("business_name") or ""
+    business_description = bot_settings.get("business_description") or ""
+    call_purpose = bot_settings.get("call_purpose") or "a quick call"
+    call_with = bot_settings.get("call_with") or ""
+    call_duration = bot_settings.get("call_duration") or "15 minutes"
+    tone = bot_settings.get("tone") or ""
+
+    if business_description:
+        business_description_section = f"{business_name} is {business_description}."
+    else:
+        business_description_section = ""
+
+    tone_section = f"\nTone: {tone}\n" if tone else ""
+
+    # Build slots text as natural language
+    if len(display_slots) >= 2:
+        slots_text = f"{display_slots[0]} or {display_slots[1]}"
+    elif len(display_slots) == 1:
+        slots_text = f"{display_slots[0]}"
+    else:
+        slots_text = "none available right now"
+
+    # If no call_with, tell LLM to skip the name
+    if not call_with:
+        call_with = "the team"
+
+    system = FIRST_TOUCH_PROMPT["system"].format(
+        assistant_name=assistant_name,
+        business_name=business_name,
+        business_description_section=business_description_section,
+        call_purpose=call_purpose,
+        call_with=call_with,
+        call_duration=call_duration,
+        tone_section=tone_section,
+        lead_name=lead_name or "there",
+        slots_text=slots_text,
+    )
+    user = FIRST_TOUCH_PROMPT["user"]
+
+    try:
+        response = await _call_llm(
+            model=model,
+            system=system,
+            user=user,
+            temperature=0.3,
+            max_tokens=300,
+            timeout=10.0,
+        )
+        if response:
+            text = response.strip().strip('"').strip("'")
+            if len(text) >= 10:
+                result["text"] = text
+                result["used"] = True
+            else:
+                result["error"] = "first_touch_too_short"
+        else:
+            result["error"] = "llm_returned_none"
+    except Exception as e:
+        result["error"] = f"first_touch_exception:{str(e)[:100]}"
+
+    return result
+
+
+async def compose_reengage_message(
+    conversation_history: list[dict],
+    bot_settings: dict,
+    llm_settings: dict,
+    bump_number: int,
+    max_bumps: int,
+) -> dict[str, Any]:
+    """Compose a context-aware re-engagement message using LLM.
+
+    Returns: {"text": str, "used": bool, "error": str | None}
+    """
+    model = llm_settings.get("model", "")
+    result: dict[str, Any] = {"text": "", "used": False, "error": None}
+
+    if not model or model == "stub" or not llm_settings.get("enabled", False):
+        result["text"] = "Hey, still interested in booking a call? Let me know and I'll find a time."
+        result["error"] = "llm_disabled"
+        return result
+
+    assistant_name = bot_settings.get("assistant_name") or "the assistant"
+    business_name = bot_settings.get("business_name") or ""
+    business_description = bot_settings.get("business_description") or ""
+    call_purpose = bot_settings.get("call_purpose") or "a quick call"
+    call_with = bot_settings.get("call_with") or "the team"
+    tone = bot_settings.get("tone") or ""
+    guardrails = bot_settings.get("reengagement_guardrails") or ""
+
+    if business_description:
+        business_description_section = f"{business_name} is {business_description}."
+    else:
+        business_description_section = ""
+
+    tone_section = f"\nTone: {tone}\n" if tone else ""
+    guardrails_section = f"\nFOLLOW-UP GUARDRAILS:\n{guardrails}\n" if guardrails else ""
+
+    history_lines = "\n".join(
+        f"{'Lead' if m['role'] == 'user' else 'You'}: {m['text']}"
+        for m in conversation_history
+    )
+    if not history_lines:
+        history_lines = "(no prior messages)"
+
+    system = REENGAGE_PROMPT["system"].format(
+        assistant_name=assistant_name,
+        business_name=business_name,
+        business_description_section=business_description_section,
+        call_purpose=call_purpose,
+        call_with=call_with,
+        bump_number=bump_number,
+        max_bumps=max_bumps,
+        guardrails_section=guardrails_section,
+        tone_section=tone_section,
+    )
+    user = REENGAGE_PROMPT["user"].format(history=history_lines)
+
+    try:
+        response = await _call_llm(
+            model=model,
+            system=system,
+            user=user,
+            temperature=0.4,
+            max_tokens=200,
+            timeout=10.0,
+        )
+        if response:
+            # Strip any quotes the LLM might wrap the message in
+            text = response.strip().strip('"').strip("'")
+            if len(text) >= 5:
+                result["text"] = text
+                result["used"] = True
+            else:
+                result["text"] = "Hey, still interested in booking a call? Let me know and I'll find a time."
+                result["error"] = "reengage_too_short"
+        else:
+            result["text"] = "Hey, still interested in booking a call? Let me know and I'll find a time."
+            result["error"] = "llm_returned_none"
+    except Exception as e:
+        result["text"] = "Hey, still interested in booking a call? Let me know and I'll find a time."
+        result["error"] = f"reengage_exception:{str(e)[:100]}"
+
+    return result
 
 
 async def process_inbound_message(
@@ -449,6 +702,7 @@ async def process_inbound_message(
     call_purpose = bot_settings.get("call_purpose") or "a quick call"
     call_with = bot_settings.get("call_with") or "the team"
     call_duration = bot_settings.get("call_duration") or "15 minutes"
+    call_mode = bot_settings.get("call_mode") or ""
     tone = bot_settings.get("tone") or ""
     objections = bot_settings.get("key_objection_responses") or {}
 
@@ -460,6 +714,7 @@ async def process_inbound_message(
     else:
         business_description_section = ""
 
+    call_mode_section = f"\nThe call format is: {call_mode}. Only mention the format if the lead asks." if call_mode else ""
     tone_section = f"\nTone: {tone}\n" if tone else ""
 
     if objections:
@@ -504,6 +759,7 @@ async def process_inbound_message(
         call_purpose=call_purpose,
         call_with=call_with,
         call_duration=call_duration,
+        call_mode_section=call_mode_section,
         today_date=today_str,
         tone_section=tone_section,
         objection_section=objection_section,

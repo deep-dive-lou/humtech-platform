@@ -58,7 +58,8 @@ SELECT c.conversation_id::text, ct.display_name, ct.channel_address,
 FROM bot.conversations c
 JOIN bot.contacts ct ON ct.contact_id = c.contact_id
 WHERE c.status = 'open'
-  AND c.last_intent = 'wants_human'
+  AND c.context->>'handoff_redirected' IS NOT NULL
+  AND c.context->'booked_booking'->>'slot' IS NULL
   AND c.updated_at < now() - interval '15 minutes';
 """
 
@@ -96,7 +97,13 @@ JOIN bot.contacts ct ON ct.contact_id = c.contact_id
 WHERE c.status = 'open'
   AND c.last_inbound_at IS NOT NULL
   AND c.last_inbound_at < now() - interval '2 hours'
-  AND (c.last_outbound_at IS NULL OR c.last_outbound_at < c.last_inbound_at);
+  AND (c.last_outbound_at IS NULL OR c.last_outbound_at < c.last_inbound_at)
+  AND NOT EXISTS (
+    SELECT 1 FROM bot.job_queue jq
+    WHERE jq.conversation_id = c.conversation_id
+      AND jq.job_type = 'reengage'
+      AND jq.status IN ('queued', 'running')
+  );
 """
 
 JOB_QUEUE_BACKUP_SQL = """

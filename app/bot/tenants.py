@@ -213,6 +213,7 @@ def get_bot_settings(tenant: dict[str, Any]) -> dict[str, Any]:
             "call_purpose": "a short discovery call to understand your current setup and see if there's a fit",
             "call_with": "Chris, our commercial director",
             "call_duration": "15 minutes",
+            "call_mode": "phone call",
             "tone": "Warm, professional, concise. ...",
             "key_objection_responses": {
                 "what_is_this": "We help businesses ...",
@@ -237,18 +238,22 @@ def get_bot_settings(tenant: dict[str, Any]) -> dict[str, Any]:
         "call_purpose": bot.get("call_purpose", ""),
         "call_with": bot.get("call_with", ""),
         "call_duration": bot.get("call_duration", ""),
+        "call_mode": bot.get("call_mode", ""),
         "tone": bot.get("tone", ""),
         "key_objection_responses": objections,
         "context": bot.get("context", ""),
         "first_touch_template": bot.get("first_touch_template"),
         "persona": bot.get("persona", ""),
-        "reengagement_enabled": bool(reengagement.get("enabled", True)),
+        "reengagement_enabled": bool(reengagement.get("enabled", False)),
         "reengagement_delay_hours": int(reengagement.get("delay_hours", 6)),
-        "reengagement_max_attempts": int(reengagement.get("max_attempts", 2)),
+        "reengagement_max_attempts": int(reengagement.get("max_attempts", 3)),
+        "reengagement_intervals_hours": reengagement.get("intervals_hours"),  # e.g. [2, 24, 72]
+        "reengagement_business_hours": reengagement.get("business_hours"),  # e.g. {"start":"09:00","end":"18:00","days":[0,1,2,3,4]}
+        "reengagement_guardrails": reengagement.get("guardrails", ""),  # Sales follow-up rules (placeholder)
         "handoff_ghl_user_id": bot.get("handoff_ghl_user_id"),
         "booking_confirmation_template": bot.get(
             "booking_confirmation_template",
-            "Booked \u2705 You're confirmed for {day} {date} {month} at {time}. See you then!",
+            "You're confirmed for {day} {date} {month} at {time}. See you then!",
         ),
     }
 

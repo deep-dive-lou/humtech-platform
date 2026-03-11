@@ -23,7 +23,7 @@ from app.bot.tenants import (
     get_llm_settings,
     get_bot_settings,
 )
-from app.bot.llm import process_inbound_message
+from app.bot.llm import process_inbound_message, compose_reengage_message, compose_first_touch_message
 from app.bot.jobs import find_and_claim_siblings, mark_siblings_done
 from app.bot.trace_logger import log_processing_run, build_debug_snapshot
 from app.engine.events import resolve_or_create_lead, write_lead_event
@@ -50,7 +50,10 @@ def _build_first_touch_text(
     name_part: str,
     template: Optional[str] = None,
 ) -> str:
-    """Build first-touch greeting with offered slots."""
+    """Build first-touch greeting with offered slots (template or fallback only).
+
+    Used when: tenant has a first_touch_template set, OR as fallback when LLM fails.
+    """
     if template:
         slot_1 = display_slots[0] if len(display_slots) > 0 else ""
         slot_2 = display_slots[1] if len(display_slots) > 1 else ""
@@ -59,22 +62,20 @@ def _build_first_touch_text(
         except (KeyError, IndexError):
             pass  # Fall through to default
 
+    # Fallback: clean, no em dashes, flat text
     if len(display_slots) >= 2:
         return (
-            f"Hey{name_part} — thanks for reaching out. "
-            f"Want to get you booked in quickly. "
-            f"I've got {display_slots[0]} or {display_slots[1]} free — which works best for you?"
+            f"Hi{name_part}, I've got {display_slots[0]} or {display_slots[1]} free for a quick call. "
+            f"Which works best for you?"
         )
     elif len(display_slots) == 1:
         return (
-            f"Hey{name_part} — thanks for reaching out. "
-            f"Want to get you booked in quickly. "
-            f"I've got {display_slots[0]} free — does that work for you?"
+            f"Hi{name_part}, I've got {display_slots[0]} free for a quick call. "
+            f"Does that work for you?"
         )
     else:
         return (
-            f"Hey{name_part} — thanks for reaching out. "
-            f"Want to get you booked in quickly. "
+            f"Hi{name_part}, we'd love to set up a quick call. "
             f"What day and time works best for you?"
         )
 
@@ -341,11 +342,35 @@ async def _handle_new_lead(
     # Build first-touch message (use first name only)
     first_name = display_name.split()[0] if display_name else ""
     name_part = f" {first_name}" if first_name else ""
-    out_text = _build_first_touch_text(
-        display_slots=display_slots,
-        name_part=name_part,
-        template=bot_settings.get("first_touch_template"),
-    )
+    llm_settings = get_llm_settings(tenant)
+
+    first_touch_template = bot_settings.get("first_touch_template")
+    llm_first_touch: dict[str, Any] = {"used": False, "error": None}
+
+    if first_touch_template:
+        # Tenant has an explicit template — use it directly
+        out_text = _build_first_touch_text(
+            display_slots=display_slots,
+            name_part=name_part,
+            template=first_touch_template,
+        )
+    else:
+        # No template — use LLM to compose first-touch
+        ft_result = await compose_first_touch_message(
+            lead_name=first_name or "",
+            display_slots=display_slots,
+            bot_settings=bot_settings,
+            llm_settings=llm_settings,
+        )
+        llm_first_touch = {"used": ft_result["used"], "error": ft_result["error"]}
+        if ft_result["used"] and ft_result["text"]:
+            out_text = ft_result["text"]
+        else:
+            # LLM failed — use clean fallback
+            out_text = _build_first_touch_text(
+                display_slots=display_slots,
+                name_part=name_part,
+            )
 
     # Create outbound message
     out_payload_dict: dict[str, Any] = {
@@ -357,7 +382,7 @@ async def _handle_new_lead(
         "event_type": "new_lead",
         "offered_slots": offered_slots,
         "calendar_check": first_touch_offer.get("calendar_check"),
-        "llm": {"enabled": False, "used": False},
+        "llm": llm_first_touch,
     }
 
     out_message_id = await conn.fetchval(
@@ -1180,7 +1205,7 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
                 )
                 if booking_result.get("success"):
                     _confirmation = _build_booking_confirmation(slot_iso, bot_settings["booking_confirmation_template"])
-                    out_text = f"{llm_preamble} {_confirmation}".strip() if llm_preamble else _confirmation
+                    out_text = _confirmation
                     route = "booked"
                     context_updates["booked_booking"] = {
                         "slot": slot_iso,
@@ -1239,7 +1264,7 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
                     )
                     if booking_result.get("success"):
                         _confirmation = _build_booking_confirmation(nearest, bot_settings["booking_confirmation_template"])
-                        out_text = f"{llm_preamble} {_confirmation}".strip() if llm_preamble else _confirmation
+                        out_text = _confirmation
                         route = "booked"
                         context_updates["booked_booking"] = {
                             "slot": nearest,
@@ -1357,10 +1382,28 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
             out_text = f"{_combined_preamble} {slot_text}".strip() if _combined_preamble else slot_text
 
         elif intent == "wants_human" and llm_result.get("should_handoff"):
-            # Handoff requested — bot steps back, human takes over
-            # out_text is already set from LLM reply (natural "I'll get someone from the team...")
-            context_updates["handoff_requested"] = {"at": now.isoformat()}
-            route = "wants_human"
+            # Handoff via booking — redirect to slot offer instead of closing
+            # Track how many times we've redirected; give up after 3
+            prev_redirects = conv_context.get("handoff_redirect_count", 0)
+            redirect_count = prev_redirects + 1
+            context_updates["handoff_redirect_count"] = redirect_count
+
+            if redirect_count <= 3:
+                context_updates["handoff_redirected"] = {"at": now.isoformat()}
+                route = "handoff_to_booking"
+                llm_preamble = llm_result.get("reply_text", "").strip()
+                slot_text, new_last_offer = await _handle_offer_slots(
+                    conn, ev.tenant_id, _NullRouteInfo(),
+                )
+                if new_last_offer:
+                    context_updates["last_offer"] = new_last_offer
+                out_text = f"{llm_preamble} {slot_text}".strip() if llm_preamble else slot_text
+            else:
+                # Max redirects reached — gracefully close and flag for human follow-up
+                call_with = bot_settings.get("call_with") or "someone from the team"
+                out_text = f"No problem at all. I'll pass your details to {call_with} and they'll reach out to you directly."
+                route = "decline"
+                context_updates["handoff_exhausted"] = {"at": now.isoformat(), "attempts": redirect_count}
 
         elif intent == "decline":
             context_updates["declined"] = {"at": now.isoformat()}
@@ -1378,7 +1421,7 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
         await conn.execute(UPDATE_CONVERSATION_CONTEXT_SQL, conversation_id, context_updates)
 
     # Close conversation on terminal outcomes
-    if route in ("wants_human", "decline"):
+    if route in ("decline",):
         await conn.execute(CLOSE_CONVERSATION_SQL, conversation_id)
 
     # Create pending outbound message (skip if LLM disabled — bot goes silent)
@@ -1482,4 +1525,137 @@ async def process_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
         "slot_matched": slot_matched,
         "booking_id": booking_result.get("booking_id") if booking_result else None,
         "trace_id": ev.trace_id,
+    }
+
+
+# ── Re-engagement job processor ────────────────────────────────────
+
+LOAD_REENGAGE_JOB_SQL = """
+SELECT jq.job_id::text, jq.tenant_id::text, jq.conversation_id::text,
+       c.contact_id::text, c.context, c.status AS conv_status,
+       c.last_outbound_at,
+       ct.display_name, ct.channel, ct.channel_address, ct.metadata AS contact_metadata,
+       COALESCE(jq.trace_id, gen_random_uuid())::text AS trace_id
+FROM bot.job_queue jq
+JOIN bot.conversations c ON c.conversation_id = jq.conversation_id
+JOIN bot.contacts ct ON ct.contact_id = c.contact_id
+WHERE jq.job_id = $1::uuid;
+"""
+
+
+async def process_reengage_job(conn: asyncpg.Connection, job_id: str) -> dict[str, Any]:
+    """Process a re-engagement job: compose and send a follow-up message."""
+    import logging
+    _logger = logging.getLogger(__name__)
+
+    row = await conn.fetchrow(LOAD_REENGAGE_JOB_SQL, job_id)
+    if not row:
+        raise RuntimeError(f"Reengage job not found: {job_id}")
+
+    tenant_id = row["tenant_id"]
+    conversation_id = row["conversation_id"]
+    contact_id = row["contact_id"]
+    context = row["context"] if isinstance(row["context"], dict) else {}
+    trace_id = row["trace_id"]
+    channel = row["channel"]
+
+    # Guard: conversation must still be open
+    if row["conv_status"] != "open":
+        _logger.info("reengage: skipping %s — conversation %s is %s", job_id, conversation_id, row["conv_status"])
+        return {"job_id": job_id, "route": "reengage_skipped", "reason": "not_open"}
+
+    # Guard: already booked
+    if context.get("booked_booking"):
+        _logger.info("reengage: skipping %s — already booked", job_id)
+        return {"job_id": job_id, "route": "reengage_skipped", "reason": "already_booked"}
+
+    # Guard: declined
+    if context.get("declined"):
+        _logger.info("reengage: skipping %s — declined", job_id)
+        return {"job_id": job_id, "route": "reengage_skipped", "reason": "declined"}
+
+    # Load tenant + settings
+    tenant = await load_tenant(conn, tenant_id)
+    bot_settings = get_bot_settings(tenant)
+    llm_settings = get_llm_settings(tenant)
+
+    reengage_count = context.get("reengage_count", 0)
+    max_attempts = bot_settings.get("reengagement_max_attempts", 3)
+    bump_number = reengage_count + 1
+
+    # Load conversation history for LLM context
+    msg_rows = await conn.fetch(LOAD_RECENT_MESSAGES_SQL, conversation_id)
+    conversation_history = [
+        {"role": "user" if r["direction"] == "inbound" else "assistant", "text": r["text"]}
+        for r in msg_rows
+    ]
+
+    # Compose follow-up message
+    llm_result = await compose_reengage_message(
+        conversation_history=conversation_history,
+        bot_settings=bot_settings,
+        llm_settings=llm_settings,
+        bump_number=bump_number,
+        max_bumps=max_attempts,
+    )
+
+    out_text = llm_result["text"]
+    if not out_text:
+        out_text = "Hey — still interested in booking a call? Let me know and I'll find a time."
+
+    # Determine provider from contact metadata
+    contact_metadata = row["contact_metadata"] if isinstance(row["contact_metadata"], dict) else {}
+    provider = tenant.get("messaging_adapter", "ghl")
+
+    # Insert outbound message
+    out_payload = {
+        "send_status": "pending",
+        "send_attempts": 0,
+        "send_last_error": None,
+        "route": "reengage",
+        "bump_number": bump_number,
+        "llm": {
+            "used": llm_result.get("used", False),
+            "model": llm_settings.get("model"),
+            "error": llm_result.get("error"),
+        },
+    }
+
+    out_message_id = await conn.fetchval(
+        INSERT_OUTBOUND_MESSAGE_SQL,
+        tenant_id,
+        conversation_id,
+        contact_id,
+        provider,
+        channel,
+        out_text,
+        out_payload,
+        trace_id,
+    )
+
+    # Update conversation context
+    context_updates: dict[str, Any] = {
+        "reengage_count": bump_number,
+        "last_reengage_at": datetime.now(ZoneInfo("UTC")).isoformat(),
+    }
+    await conn.execute(UPDATE_CONVERSATION_CONTEXT_SQL, conversation_id, context_updates)
+
+    # If this was the last bump, close the conversation
+    if bump_number >= max_attempts:
+        await conn.execute(CLOSE_CONVERSATION_SQL, conversation_id)
+        _logger.info("reengage: max bumps reached for %s — closing conversation", conversation_id)
+
+    _logger.info(
+        "reengage: sent bump %d/%d for conversation %s (message %s)",
+        bump_number, max_attempts, conversation_id, out_message_id,
+    )
+
+    return {
+        "job_id": job_id,
+        "tenant_id": tenant_id,
+        "conversation_id": conversation_id,
+        "out_message_id": out_message_id,
+        "route": "reengage",
+        "bump_number": bump_number,
+        "trace_id": trace_id,
     }

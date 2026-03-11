@@ -19,7 +19,7 @@ logging.basicConfig(
 from .config import settings
 from .db import init_db_pool, close_db_pool, get_pool
 from .bot.jobs import claim_jobs, mark_done, mark_retry
-from .bot.processor import process_job
+from .bot.processor import process_job, process_reengage_job
 from .bot.sender import send_pending_outbound
 from .bot.tenants import load_tenant_debug
 from .engine.webhooks import router as engine_webhooks_router
@@ -185,7 +185,10 @@ async def worker_run(limit: int = 50):
         for job in jobs:
             try:
                 async with conn.transaction():
-                    result = await process_job(conn, job.job_id)
+                    if job.job_type == "reengage":
+                        result = await process_reengage_job(conn, job.job_id)
+                    else:
+                        result = await process_job(conn, job.job_id)
                     await mark_done(conn, job.job_id)
                 processed += 1
             except Exception as e:
