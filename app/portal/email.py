@@ -91,6 +91,7 @@ EMAIL_HTML = """\
       </p>
       {% endif %}
 
+      {% if magic_link %}
       <!-- CTA Button -->
       <table cellpadding="0" cellspacing="0" style="margin:0 auto 24px;">
       <tr>
@@ -107,6 +108,7 @@ EMAIL_HTML = """\
         Or copy this link:<br/>
         <a href="{{ magic_link }}" style="color:{{ brand_color }};word-break:break-all;">{{ magic_link }}</a>
       </p>
+      {% endif %}
     </td>
   </tr>
 

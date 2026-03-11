@@ -344,6 +344,73 @@
     {% endfor %}
     {% endif %}
 
+    <!-- Email log + compose -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <h2 class="text-base font-semibold text-gray-900">Emails</h2>
+        {% if email_enabled %}
+        <button type="button" onclick="toggleCompose()"
+                id="composeToggleBtn"
+                class="text-sm font-medium px-4 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
+          Compose
+        </button>
+        {% endif %}
+      </div>
+
+      {% if email_enabled %}
+      <!-- Compose form (hidden by default) -->
+      <div id="composePanel" class="hidden border-b border-gray-100">
+        <div class="px-6 py-5 space-y-4">
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">To</label>
+              <input type="text" readonly value="{{ client_email }}"
+                     class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">From</label>
+              <input type="text" readonly value="{{ sending_from_email }}"
+                     class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500" />
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Subject</label>
+            <input type="text" id="composeSubject"
+                   value="Re: Document request"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ring-brand" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Message</label>
+            <textarea id="composeBody" rows="5" placeholder="Type your message to the client..."
+                      class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ring-brand resize-none"></textarea>
+          </div>
+          <div class="flex items-center justify-between">
+            <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+              <input type="checkbox" id="composeIncludeLink" checked
+                     class="rounded border-gray-300" />
+              Include document upload link
+            </label>
+            <div class="flex items-center gap-3">
+              <button type="button" onclick="toggleCompose()" class="text-sm text-gray-400 hover:text-gray-600">Cancel</button>
+              <button type="button" onclick="sendCustomEmail()" id="composeSendBtn"
+                      class="text-sm font-medium text-white px-5 py-2 rounded-lg transition-opacity hover:opacity-90"
+                      style="background-color: {{ brand.brand_color or '#111827' }}">
+                Send email
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Email log (loaded async) -->
+      <div id="emailLog" class="divide-y divide-gray-100">
+        <div class="px-6 py-8 text-center">
+          <p class="text-sm text-gray-400">Loading emails...</p>
+        </div>
+      </div>
+    </div>
+
     <!-- Activity timeline -->
     {% if audit_events %}
     <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -660,5 +727,125 @@
       s.scale = newScale;
       renderStaffPage(itemId, s.currentPage);
     }
+
+    // ---------------------------------------------------------------
+    // Email log + compose
+    // ---------------------------------------------------------------
+
+    function toggleCompose() {
+      const panel = document.getElementById('composePanel');
+      const btn = document.getElementById('composeToggleBtn');
+      if (!panel) return;
+      const hidden = panel.classList.toggle('hidden');
+      if (btn) btn.textContent = hidden ? 'Compose' : 'Cancel';
+    }
+
+    async function loadEmailLog() {
+      const container = document.getElementById('emailLog');
+      try {
+        const res = await fetch(`/portal/staff/requests/${requestId}/emails`);
+        const emails = await res.json();
+        if (!emails.length) {
+          container.innerHTML = `
+            <div class="px-6 py-8 text-center">
+              <i data-lucide="mail" class="w-8 h-8 text-gray-200 mx-auto mb-2"></i>
+              <p class="text-sm text-gray-400">No emails sent yet</p>
+            </div>`;
+          if (window.lucide) lucide.createIcons();
+          return;
+        }
+        container.innerHTML = emails.map(e => {
+          const d = new Date(e.sent_at);
+          const ts = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                   + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+          const badge = e.email_type === 'custom'
+            ? '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">Custom</span>'
+            : '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">Magic link</span>';
+          return `
+            <div class="px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer" onclick="toggleEmailPreview('${e.id}')">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3 min-w-0">
+                  <i data-lucide="mail" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+                  <span class="text-sm font-medium text-gray-900 truncate">${escHtml(e.subject)}</span>
+                  ${badge}
+                </div>
+                <span class="text-xs text-gray-400 flex-shrink-0 ml-4">${ts}</span>
+              </div>
+              <div class="text-xs text-gray-400 mt-1 ml-7">To: ${escHtml(e.recipient_email)}</div>
+              ${e.html_body ? `
+              <div id="email-preview-${e.id}" class="hidden mt-3 ml-7 border border-gray-200 rounded-lg overflow-hidden">
+                <iframe sandbox="" srcdoc="${escAttr(e.html_body)}" class="w-full border-0" style="height:300px;"></iframe>
+              </div>` : ''}
+            </div>`;
+        }).join('');
+        if (window.lucide) lucide.createIcons();
+      } catch (err) {
+        container.innerHTML = `<div class="px-6 py-6 text-center"><p class="text-sm text-red-400">Failed to load emails.</p></div>`;
+      }
+    }
+
+    function toggleEmailPreview(id) {
+      const el = document.getElementById('email-preview-' + id);
+      if (el) el.classList.toggle('hidden');
+    }
+
+    async function sendCustomEmail() {
+      const btn = document.getElementById('composeSendBtn');
+      const subject = document.getElementById('composeSubject').value.trim();
+      const bodyText = document.getElementById('composeBody').value.trim();
+      const includeLink = document.getElementById('composeIncludeLink').checked;
+
+      if (!subject || !bodyText) {
+        alert('Please enter a subject and message.');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+      try {
+        const res = await fetch(`/portal/staff/requests/${requestId}/compose-email`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subject, body_text: bodyText, include_magic_link: includeLink }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error || 'Failed to send email.');
+          return;
+        }
+        // Clear form and reload log
+        document.getElementById('composeBody').value = '';
+        toggleCompose();
+        loadEmailLog();
+        // Show success toast
+        showEmailToast('Email sent to ' + data.email);
+      } catch (err) {
+        alert('Network error. Please try again.');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Send email';
+      }
+    }
+
+    function showEmailToast(msg) {
+      const toast = document.createElement('div');
+      toast.className = 'fixed bottom-6 right-6 bg-gray-900 text-white text-sm px-5 py-3 rounded-xl shadow-lg z-50 transition-opacity';
+      toast.textContent = msg;
+      document.body.appendChild(toast);
+      setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 3000);
+    }
+
+    function escHtml(s) {
+      const d = document.createElement('div');
+      d.textContent = s || '';
+      return d.innerHTML;
+    }
+
+    function escAttr(s) {
+      return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // Load email log on page load
+    document.addEventListener('DOMContentLoaded', loadEmailLog);
   </script>
 {% endblock %}
