@@ -1,0 +1,33 @@
+{% macro info_icon(key) %}
+<span class="info-icon" data-drawer="{{ key }}" onclick="toggleDrawer('{{ key }}')" title="Learn more">
+  <i data-lucide="info"></i>
+</span>
+{% endmacro %}
+
+{% macro drawer(key, explanations) %}
+{% if explanations and key in explanations %}
+{% set ex = explanations[key] %}
+<div class="info-drawer" id="drawer-{{ key }}">
+  <div class="drawer-body">
+    <div class="drawer-grid">
+      <div class="drawer-section">
+        <span class="drawer-label">What</span>
+        <p class="drawer-text">{{ ex.what }}</p>
+      </div>
+      <div class="drawer-section">
+        <span class="drawer-label">How it's calculated</span>
+        <p class="drawer-text">{{ ex.how }}</p>
+      </div>
+      <div class="drawer-section">
+        <span class="drawer-label">Why it matters</span>
+        <p class="drawer-text">{{ ex.why }}</p>
+      </div>
+      <div class="drawer-section drawer-example">
+        <span class="drawer-label">Example</span>
+        <p class="drawer-text">{{ ex.example }}</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endmacro %}

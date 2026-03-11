@@ -1,30 +1,78 @@
 {% extends "_base.html" %}
+{% from "_explainer.html" import info_icon, drawer %}
+{% from "_digest.html" import digest_card %}
 {% block title %}Survival Analysis{% endblock %}
 
 {% block content %}
-<div class="mb-8">
+{{ digest_card(digest) }}
+<div class="mb-6">
   <h1 class="text-2xl font-bold text-gray-900">Survival Analysis</h1>
   <p class="text-sm text-gray-500 mt-1">Kaplan-Meier deal aging curves — {{ tenant }} (last {{ lookback }} days)</p>
 </div>
 
+<!-- Page-level concept bar -->
+<div class="flex flex-wrap items-center gap-4 mb-6 bg-white rounded-xl border border-gray-200 px-5 py-3">
+  <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Concepts</p>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('kaplan_meier')">
+    {{ info_icon('kaplan_meier') }} Kaplan-Meier curve
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('censoring')">
+    {{ info_icon('censoring') }} Censoring
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('median_survival')">
+    {{ info_icon('median_survival') }} Median survival
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('hazard')">
+    {{ info_icon('hazard') }} Hazard
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('dead_deals')">
+    {{ info_icon('dead_deals') }} Dead deal alerts
+  </button>
+</div>
+{{ drawer('kaplan_meier', explanations) }}
+{{ drawer('censoring', explanations) }}
+{{ drawer('median_survival', explanations) }}
+{{ drawer('hazard', explanations) }}
+{{ drawer('dead_deals', explanations) }}
+
 <!-- KM Curves -->
 <div class="bg-white rounded-xl border border-gray-200 p-6 mb-8">
-  <h2 class="text-base font-semibold text-gray-900 mb-1">Time-to-Exit by Stage</h2>
-  <p class="text-xs text-gray-500 mb-4">Survival probability over time (days). Steeper drop = faster stage transitions. Flat tail = stalled deals.</p>
+  <div class="flex items-center gap-2 mb-1">
+    <h2 class="text-base font-semibold text-gray-900">Time-to-Exit by Stage</h2>
+    {{ info_icon('kaplan_meier') }}
+  </div>
+  <p class="text-xs text-gray-500 mb-4">
+    Survival probability over time (days in stage).
+    Steeper early drop = faster stage transitions (healthy).
+    Long flat tail = stalled deals.
+  </p>
   <div id="km-chart" style="height: 400px;"></div>
 </div>
 
 <!-- Stage Medians -->
 <div class="bg-white rounded-xl border border-gray-200 p-6 mb-8">
-  <h2 class="text-base font-semibold text-gray-900 mb-4">Median Time in Stage</h2>
+  <div class="flex items-center gap-2 mb-4">
+    <h2 class="text-base font-semibold text-gray-900">Median Time in Stage</h2>
+    {{ info_icon('median_survival') }}
+  </div>
   <div id="median-chart" style="height: 200px;"></div>
+  <p class="text-xs text-gray-400 mt-3">
+    Median is used rather than mean — a handful of very slow deals would otherwise inflate the average.
+    Compare these numbers before and after HumTech to prove time-to-close has improved.
+  </p>
 </div>
 
 <!-- Dead Deals -->
 <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
   <div class="px-6 py-4 border-b border-gray-200">
-    <h2 class="text-base font-semibold text-gray-900">Statistically Dead Deals</h2>
-    <p class="text-xs text-gray-500 mt-0.5">Open leads exceeding 3x median dwell time for their current stage</p>
+    <div class="flex items-center gap-2">
+      <h2 class="text-base font-semibold text-gray-900">Statistically Dead Deals</h2>
+      {{ info_icon('dead_deals') }}
+    </div>
+    <p class="text-xs text-gray-500 mt-0.5">
+      Open leads exceeding 3&times; median dwell time for their current stage.
+      These need active intervention — call, close, or disqualify.
+    </p>
   </div>
 
   {% if dead_deals %}
@@ -118,8 +166,8 @@ Plotly.newPlot('km-chart', kmTraces, {
   paper_bgcolor: 'transparent',
   plot_bgcolor: 'transparent',
   font: { family: 'Inter, sans-serif', size: 11 },
-  xaxis: { title: { text: 'Days', font: { size: 11 } }, showgrid: false },
-  yaxis: { title: { text: 'Survival Probability', font: { size: 11 } }, showgrid: true, gridcolor: '#f1f5f9', range: [0, 1.02] },
+  xaxis: { title: { text: 'Days in stage', font: { size: 11 } }, showgrid: false },
+  yaxis: { title: { text: 'Survival Probability S(t)', font: { size: 11 } }, showgrid: true, gridcolor: '#f1f5f9', range: [0, 1.02] },
   legend: { orientation: 'h', y: -0.2, font: { size: 10 } },
   hovermode: 'x unified',
 }, { displayModeBar: false });
@@ -153,7 +201,7 @@ if (medianStages.length > 0) {
     paper_bgcolor: 'transparent',
     plot_bgcolor: 'transparent',
     font: { family: 'Inter, sans-serif', size: 11 },
-    xaxis: { title: { text: 'Median Days', font: { size: 11 } }, showgrid: true, gridcolor: '#f1f5f9' },
+    xaxis: { title: { text: 'Median Days in Stage', font: { size: 11 } }, showgrid: true, gridcolor: '#f1f5f9' },
     yaxis: { autorange: 'reversed' },
   }, { displayModeBar: false });
 }

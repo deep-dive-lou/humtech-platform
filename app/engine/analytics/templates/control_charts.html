@@ -1,11 +1,39 @@
 {% extends "_base.html" %}
+{% from "_explainer.html" import info_icon, drawer %}
+{% from "_digest.html" import digest_card %}
 {% block title %}Control Charts{% endblock %}
 
 {% block content %}
-<div class="mb-8">
+{{ digest_card(digest) }}
+<div class="mb-6">
   <h1 class="text-2xl font-bold text-gray-900">Control Charts</h1>
   <p class="text-sm text-gray-500 mt-1">P-charts with Western Electric rules + CUSUM trend detection — {{ tenant }}</p>
 </div>
+
+<!-- Page-level concept drawers -->
+<div class="flex flex-wrap items-center gap-4 mb-6 bg-white rounded-xl border border-gray-200 px-5 py-3">
+  <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Concepts</p>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('p_chart')">
+    {{ info_icon('p_chart') }} P-chart
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('control_limits')">
+    {{ info_icon('control_limits') }} Control limits
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('cusum')">
+    {{ info_icon('cusum') }} CUSUM
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('western_electric_rules')">
+    {{ info_icon('western_electric_rules') }} Western Electric rules
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('anomaly_violation')">
+    {{ info_icon('anomaly_violation') }} Violations
+  </button>
+</div>
+{{ drawer('p_chart', explanations) }}
+{{ drawer('control_limits', explanations) }}
+{{ drawer('cusum', explanations) }}
+{{ drawer('western_electric_rules', explanations) }}
+{{ drawer('anomaly_violation', explanations) }}
 
 {% if not charts %}
 <div class="text-center py-16 bg-white rounded-xl border border-gray-200">
@@ -17,13 +45,16 @@
   {% for chart in charts %}
   <div class="bg-white rounded-xl border border-gray-200 p-6">
     <div class="flex items-center justify-between mb-4">
-      <div>
-        <h2 class="text-base font-semibold text-gray-900">{{ chart.label }}</h2>
-        <p class="text-xs text-gray-500 mt-0.5">
-          Center: {{ "%.2f" | format(chart.center * 100) }}% —
-          UCL: {{ "%.2f" | format(chart.ucl * 100) }}% —
-          LCL: {{ "%.2f" | format(chart.lcl * 100) }}%
-        </p>
+      <div class="flex items-start gap-2">
+        <div>
+          <h2 class="text-base font-semibold text-gray-900">{{ chart.label }}</h2>
+          <p class="text-xs text-gray-500 mt-0.5">
+            Center: {{ "%.2f" | format(chart.center * 100) }}% &mdash;
+            UCL: {{ "%.2f" | format(chart.ucl * 100) }}% &mdash;
+            LCL: {{ "%.2f" | format(chart.lcl * 100) }}%
+          </p>
+        </div>
+        {{ info_icon('p_chart_' + loop.index|string) }}
       </div>
       {% if chart.violations %}
       <span class="inline-flex items-center gap-1.5 px-3 py-1 bg-orange-50 border border-orange-200 text-orange-700 text-xs font-medium rounded-full">
@@ -38,19 +69,59 @@
       {% endif %}
     </div>
 
+    <!-- Inline p-chart explanation (per chart instance) -->
+    <div class="info-drawer" id="drawer-p_chart_{{ loop.index }}">
+      <div class="drawer-body">
+        <div class="drawer-grid">
+          <div class="drawer-section">
+            <span class="drawer-label">What</span>
+            <p class="drawer-text">A statistical process control chart for the <strong>{{ chart.label }}</strong> rate. The shaded bands show 1, 2, and 3 standard deviations from the centre.</p>
+          </div>
+          <div class="drawer-section">
+            <span class="drawer-label">Control limits</span>
+            <p class="drawer-text">Centre (average rate): <strong>{{ "%.2f" | format(chart.center * 100) }}%</strong>. UCL: <strong>{{ "%.2f" | format(chart.ucl * 100) }}%</strong>. LCL: <strong>{{ "%.2f" | format(chart.lcl * 100) }}%</strong>. Points outside these bounds are almost certainly signals, not noise.</p>
+          </div>
+          <div class="drawer-section drawer-example">
+            <span class="drawer-label">What to look for</span>
+            <p class="drawer-text">Orange diamond markers indicate Western Electric rule violations — non-random patterns that suggest the process has shifted. Check the CUSUM below for sustained drift. If all points stay within the shaded bands with no patterns, the metric is stable.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- P-chart -->
     <div id="pchart-{{ loop.index }}" style="height: 260px;"></div>
 
     <!-- CUSUM -->
     <div class="mt-4 pt-4 border-t border-gray-100">
-      <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">CUSUM</p>
+      <div class="flex items-center gap-2 mb-2">
+        <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">CUSUM</p>
+        {{ info_icon('cusum_' + loop.index|string) }}
+      </div>
+      <div class="info-drawer" id="drawer-cusum_{{ loop.index }}">
+        <div class="drawer-body">
+          <div class="drawer-grid">
+            <div class="drawer-section">
+              <span class="drawer-label">What CUSUM+ and CUSUM- show</span>
+              <p class="drawer-text">CUSUM+ (darker blue) accumulates positive deviations — rising means the rate has been consistently above target. CUSUM- (lighter blue) accumulates negative deviations. If either crosses the signal threshold, a drift is confirmed.</p>
+            </div>
+            <div class="drawer-section drawer-example">
+              <span class="drawer-label">Why this complements the P-chart</span>
+              <p class="drawer-text">A P-chart catches sudden spikes. CUSUM catches gradual drift — e.g. a metric slowly falling 0.2% per month for 5 months. Each individual month looks fine on the P-chart; CUSUM accumulates the signal and fires an alert. Together, they cover both types of shift.</p>
+            </div>
+          </div>
+        </div>
+      </div>
       <div id="cusum-{{ loop.index }}" style="height: 140px;"></div>
     </div>
 
     <!-- Violation details -->
     {% if chart.violations %}
     <div class="mt-4 pt-4 border-t border-gray-100">
-      <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Violations</p>
+      <div class="flex items-center gap-2 mb-2">
+        <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Violations</p>
+        {{ info_icon('western_electric_rules') }}
+      </div>
       <div class="space-y-1">
         {% for v in chart.violations %}
         <div class="flex items-center gap-2 text-xs text-gray-600">
@@ -58,6 +129,11 @@
           <span>Period {{ v.index + 1 }} ({{ chart.labels[v.index] }}): {{ v.desc }}</span>
         </div>
         {% endfor %}
+      </div>
+      <div class="mt-3 p-3 bg-blue-50 rounded-lg text-xs text-gray-600">
+        <strong>What to do:</strong> Violations are prompts to investigate, not emergencies.
+        Check if anything changed in those periods — lead source mix, team changes, seasonal effects.
+        If violations cluster across multiple metrics, a systemic shift is more likely.
       </div>
     </div>
     {% endif %}

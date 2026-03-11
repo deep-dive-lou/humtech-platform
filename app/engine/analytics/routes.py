@@ -38,6 +38,15 @@ from .survival import kaplan_meier_per_stage, dead_deal_alerts
 from .bottleneck import stage_throughput
 from .causal import run_its_analysis, run_causal_impact, run_dr_estimator, compute_uplift_summary
 from .cohort import run_cohort_analysis, run_simpsons_check
+from .explanations import EXPLANATIONS
+from .digest import (
+    generate_dashboard_digest,
+    generate_control_charts_digest,
+    generate_survival_digest,
+    generate_bottleneck_digest,
+    generate_causal_digest,
+    generate_cohort_digest,
+)
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -58,6 +67,12 @@ async def _resolve_tenant(conn: asyncpg.Connection, slug: str) -> str | None:
     """Resolve tenant slug to UUID string."""
     row = await conn.fetchrow(Q.TENANT_BY_SLUG, slug)
     return str(row["tenant_id"]) if row else None
+
+
+async def _list_tenants(conn: asyncpg.Connection) -> list[str]:
+    """Return all tenant slugs, sorted alphabetically."""
+    rows = await conn.fetch("SELECT tenant_slug FROM core.tenants ORDER BY tenant_slug")
+    return [r["tenant_slug"] for r in rows]
 
 
 # Rate metrics that have numerator/denominator in snapshot totals
@@ -169,17 +184,21 @@ async def dashboard(
     user: dict = Depends(require_analytics),
     conn: asyncpg.Connection = Depends(_get_conn),
 ):
+    tenants = await _list_tenants(conn)
     tenant_id = await _resolve_tenant(conn, tenant)
     if not tenant_id:
         return _templates.TemplateResponse("dashboard.html", {
             "request": request,
             "error": f"Tenant '{tenant}' not found",
             "tenant": tenant,
+            "tenants": tenants,
             "kpis": [],
             "sparklines": {},
             "narratives": [],
             "anomaly_count": 0,
             "active_page": "dashboard",
+            "explanations": EXPLANATIONS,
+            "digest": None,
         })
 
     # Fetch snapshot time series
@@ -189,11 +208,14 @@ async def dashboard(
             "request": request,
             "error": "No metric snapshots found. Run compute_metric_snapshot.py first.",
             "tenant": tenant,
+            "tenants": tenants,
             "kpis": [],
             "sparklines": {},
             "narratives": [],
             "anomaly_count": 0,
             "active_page": "dashboard",
+            "explanations": EXPLANATIONS,
+            "digest": None,
         })
 
     snapshots = [{"period_start": r["period_start"], "metrics": _parse_metrics(r["metrics"])} for r in rows]
@@ -294,16 +316,32 @@ async def dashboard(
     # Build narratives
     narratives = _build_narratives(snapshots, latest, anomaly_count, bottleneck_stage)
 
+    # AI digest
+    digest = None
+    try:
+        digest = await generate_dashboard_digest(
+            tenant=tenant,
+            kpis=kpis,
+            sparklines_raw=json.dumps(sparklines),
+            narratives=narratives,
+            anomaly_count=anomaly_count,
+        )
+    except Exception:
+        pass
+
     return _templates.TemplateResponse("dashboard.html", {
         "request": request,
         "error": None,
         "tenant": tenant,
+        "tenants": tenants,
         "period_type": period_type,
         "kpis": kpis,
         "sparklines": json.dumps(sparklines),
         "narratives": narratives,
         "anomaly_count": anomaly_count,
         "active_page": "dashboard",
+        "explanations": EXPLANATIONS,
+        "digest": digest,
     })
 
 
@@ -366,11 +404,13 @@ async def control_charts_page(
     user: dict = Depends(require_analytics),
     conn: asyncpg.Connection = Depends(_get_conn),
 ):
+    tenants = await _list_tenants(conn)
     tenant_id = await _resolve_tenant(conn, tenant)
     if not tenant_id:
         return _templates.TemplateResponse("control_charts.html", {
             "request": request, "error": f"Tenant '{tenant}' not found",
-            "tenant": tenant, "charts": [], "active_page": "control_charts",
+            "tenant": tenant, "tenants": tenants, "charts": [], "active_page": "control_charts",
+            "explanations": EXPLANATIONS, "digest": None,
         })
 
     rows = await conn.fetch(Q.SNAPSHOTS_SERIES, tenant_id, period_type)
@@ -409,13 +449,23 @@ async def control_charts_page(
             "cusum_signals": cusum_data.signals,
         })
 
+    # AI digest
+    digest = None
+    try:
+        digest = await generate_control_charts_digest(tenant=tenant, charts=charts)
+    except Exception:
+        pass
+
     return _templates.TemplateResponse("control_charts.html", {
         "request": request,
         "error": None,
         "tenant": tenant,
+        "tenants": tenants,
         "charts": charts,
         "charts_json": json.dumps(charts, default=str),
         "active_page": "control_charts",
+        "explanations": EXPLANATIONS,
+        "digest": digest,
     })
 
 
@@ -430,12 +480,14 @@ async def survival_page(
     user: dict = Depends(require_analytics),
     conn: asyncpg.Connection = Depends(_get_conn),
 ):
+    tenants = await _list_tenants(conn)
     tenant_id = await _resolve_tenant(conn, tenant)
     if not tenant_id:
         return _templates.TemplateResponse("survival.html", {
             "request": request, "error": f"Tenant '{tenant}' not found",
-            "tenant": tenant, "curves": {}, "dead_deals": [],
+            "tenant": tenant, "tenants": tenants, "curves": {}, "dead_deals": [],
             "active_page": "survival",
+            "explanations": EXPLANATIONS, "digest": None,
         })
 
     km_curves = await kaplan_meier_per_stage(conn, tenant_id, lookback_days=lookback)
@@ -465,14 +517,28 @@ async def survival_page(
         for d in dead_deals
     ]
 
+    # AI digest
+    digest = None
+    try:
+        digest = await generate_survival_digest(
+            tenant=tenant,
+            curves_data=curves_json,
+            dead_deals=dead_deals_list,
+        )
+    except Exception:
+        pass
+
     return _templates.TemplateResponse("survival.html", {
         "request": request,
         "error": None,
         "tenant": tenant,
+        "tenants": tenants,
         "lookback": lookback,
         "curves_json": json.dumps(curves_json),
         "dead_deals": dead_deals_list,
         "active_page": "survival",
+        "explanations": EXPLANATIONS,
+        "digest": digest,
     })
 
 
@@ -487,11 +553,13 @@ async def bottleneck_page(
     user: dict = Depends(require_analytics),
     conn: asyncpg.Connection = Depends(_get_conn),
 ):
+    tenants = await _list_tenants(conn)
     tenant_id = await _resolve_tenant(conn, tenant)
     if not tenant_id:
         return _templates.TemplateResponse("bottleneck.html", {
             "request": request, "error": f"Tenant '{tenant}' not found",
-            "tenant": tenant, "stages": [], "active_page": "bottleneck",
+            "tenant": tenant, "tenants": tenants, "stages": [], "active_page": "bottleneck",
+            "explanations": EXPLANATIONS, "digest": None,
         })
 
     stages = await stage_throughput(conn, tenant_id, lookback_days=lookback)
@@ -511,14 +579,24 @@ async def bottleneck_page(
         for s in stages
     ]
 
+    # AI digest
+    digest = None
+    try:
+        digest = await generate_bottleneck_digest(tenant=tenant, stages=stages_list)
+    except Exception:
+        pass
+
     return _templates.TemplateResponse("bottleneck.html", {
         "request": request,
         "error": None,
         "tenant": tenant,
+        "tenants": tenants,
         "lookback": lookback,
         "stages": stages_list,
         "stages_json": json.dumps(stages_list, default=str),
         "active_page": "bottleneck",
+        "explanations": EXPLANATIONS,
+        "digest": digest,
     })
 
 
@@ -547,13 +625,16 @@ async def causal_page(
     user: dict = Depends(require_analytics),
     conn: asyncpg.Connection = Depends(_get_conn),
 ):
+    tenants = await _list_tenants(conn)
     empty_ctx = {
-        "request": request, "tenant": tenant, "metric": metric,
+        "request": request, "tenant": tenant, "tenants": tenants, "metric": metric,
         "metrics_options": _CAUSAL_METRICS,
         "active_page": "causal",
         "its": None, "its_json": "null",
         "bsts": None, "bsts_json": "null",
         "dr": None, "uplift": None, "error": None,
+        "explanations": EXPLANATIONS,
+        "digest": None,
     }
 
     tenant_id = await _resolve_tenant(conn, tenant)
@@ -567,19 +648,41 @@ async def causal_page(
     dr_result = await run_dr_estimator(conn, tenant_id)
     uplift = compute_uplift_summary(its_result, bsts_result, dr_result)
 
+    its_ser = _serialise_its(its_result)
+    bsts_ser = _serialise_bsts(bsts_result)
+    dr_ser = _serialise_dr(dr_result)
+    uplift_ser = _serialise_uplift(uplift)
+
+    # AI digest
+    digest = None
+    try:
+        digest = await generate_causal_digest(
+            tenant=tenant,
+            metric=metric,
+            its=its_ser,
+            bsts=bsts_ser,
+            dr=dr_ser,
+            uplift=uplift_ser,
+        )
+    except Exception:
+        pass
+
     return _templates.TemplateResponse("causal.html", {
         "request": request,
         "error": None,
         "tenant": tenant,
+        "tenants": tenants,
         "metric": metric,
         "metrics_options": _CAUSAL_METRICS,
         "active_page": "causal",
-        "its": _serialise_its(its_result),
-        "its_json": json.dumps(_serialise_its(its_result), default=str),
-        "bsts": _serialise_bsts(bsts_result),
-        "bsts_json": json.dumps(_serialise_bsts(bsts_result), default=str),
-        "dr": _serialise_dr(dr_result),
-        "uplift": _serialise_uplift(uplift),
+        "its": its_ser,
+        "its_json": json.dumps(its_ser, default=str),
+        "bsts": bsts_ser,
+        "bsts_json": json.dumps(bsts_ser, default=str),
+        "dr": dr_ser,
+        "uplift": uplift_ser,
+        "explanations": EXPLANATIONS,
+        "digest": digest,
     })
 
 
@@ -662,12 +765,15 @@ async def cohort_page(
     user: dict = Depends(require_analytics),
     conn: asyncpg.Connection = Depends(_get_conn),
 ):
+    tenants = await _list_tenants(conn)
     empty_ctx = {
-        "request": request, "tenant": tenant,
+        "request": request, "tenant": tenant, "tenants": tenants,
         "lookback_months": lookback_months,
         "active_page": "cohort",
         "matrix": None, "matrix_json": "null",
         "simpson": None, "error": None,
+        "explanations": EXPLANATIONS,
+        "digest": None,
     }
 
     tenant_id = await _resolve_tenant(conn, tenant)
@@ -678,15 +784,32 @@ async def cohort_page(
     matrix = await run_cohort_analysis(conn, tenant_id, lookback_months)
     simpson = await run_simpsons_check(conn, tenant_id, lookback_months)
 
+    matrix_ser = _serialise_matrix(matrix)
+    simpson_ser = _serialise_simpson(simpson)
+
+    # AI digest
+    digest = None
+    try:
+        digest = await generate_cohort_digest(
+            tenant=tenant,
+            matrix=matrix_ser,
+            simpson=simpson_ser,
+        )
+    except Exception:
+        pass
+
     return _templates.TemplateResponse("cohort.html", {
         "request": request,
         "error": None,
         "tenant": tenant,
+        "tenants": tenants,
         "lookback_months": lookback_months,
         "active_page": "cohort",
-        "matrix": _serialise_matrix(matrix),
-        "matrix_json": json.dumps(_serialise_matrix(matrix), default=str),
-        "simpson": _serialise_simpson(simpson),
+        "matrix": matrix_ser,
+        "matrix_json": json.dumps(matrix_ser, default=str),
+        "simpson": simpson_ser,
+        "explanations": EXPLANATIONS,
+        "digest": digest,
     })
 
 

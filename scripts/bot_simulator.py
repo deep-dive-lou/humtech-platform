@@ -91,16 +91,17 @@ PERSONAS = [
         "expected_terminal": "booked",
         "system_prompt": (
             "You are James Wilson. You're eager to book. When offered slots, pick the first one. "
-            "IMPORTANT: After the bot confirms your booking, say 'Actually, can I change the time? "
-            "Something came up.' Then when offered new slots, pick the second option. "
-            "You must book first, then reschedule to a different slot."
+            "Wait for the bot to CONFIRM your booking (look for a confirmation message with a date and time). "
+            "Once confirmed, reply with EXACTLY: 'Actually, can I change the time? Something came up.' "
+            "Then when offered new slots, pick the second option. "
+            "You MUST go through two stages: 1) book first, 2) then reschedule after confirmation."
         ),
     },
     {
         "id": "human_seeker",
         "name": "Linda Brown",
         "goal": "Ask to speak to a real person",
-        "expected_terminal": "wants_human",
+        "expected_terminal": "decline",
         "system_prompt": (
             "You are Linda Brown. You don't like automated systems. "
             "When the bot messages you, respond with something like "
@@ -158,7 +159,7 @@ PERSONAS = [
         "id": "aggressive",
         "name": "Gary Marsh",
         "goal": "Be impatient and demand to speak to someone",
-        "expected_terminal": "wants_human",
+        "expected_terminal": "decline",
         "system_prompt": (
             "You are Gary Marsh. You are frustrated and impatient. "
             "You want someone to call you RIGHT NOW. Your first message: 'Just call me back'. "

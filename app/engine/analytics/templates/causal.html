@@ -1,7 +1,10 @@
 {% extends "_base.html" %}
+{% from "_explainer.html" import info_icon, drawer %}
+{% from "_digest.html" import digest_card %}
 {% block title %}Causal Attribution{% endblock %}
 
 {% block content %}
+{{ digest_card(digest) }}
 <div class="flex items-center justify-between mb-6">
   <div>
     <h1 class="text-2xl font-bold">Causal Attribution</h1>
@@ -19,36 +22,96 @@
   </form>
 </div>
 
+<!-- Page-level concept bar -->
+<div class="flex flex-wrap items-center gap-4 mb-6 bg-white rounded-xl border border-gray-200 px-5 py-3">
+  <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Concepts</p>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('its')">
+    {{ info_icon('its') }} ITS
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('counterfactual')">
+    {{ info_icon('counterfactual') }} Counterfactual
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('level_change')">
+    {{ info_icon('level_change') }} Level change
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('slope_change')">
+    {{ info_icon('slope_change') }} Slope change
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('bsts')">
+    {{ info_icon('bsts') }} CausalImpact / BSTS
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('prob_causal')">
+    {{ info_icon('prob_causal') }} P(causal)
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('doubly_robust')">
+    {{ info_icon('doubly_robust') }} Doubly Robust
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('propensity_auc')">
+    {{ info_icon('propensity_auc') }} Propensity AUC
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('uplift_consensus')">
+    {{ info_icon('uplift_consensus') }} Uplift consensus
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('ipcc_language')">
+    {{ info_icon('ipcc_language') }} IPCC language
+  </button>
+</div>
+{{ drawer('its', explanations) }}
+{{ drawer('counterfactual', explanations) }}
+{{ drawer('level_change', explanations) }}
+{{ drawer('slope_change', explanations) }}
+{{ drawer('bsts', explanations) }}
+{{ drawer('prob_causal', explanations) }}
+{{ drawer('doubly_robust', explanations) }}
+{{ drawer('propensity', explanations) }}
+{{ drawer('propensity_auc', explanations) }}
+{{ drawer('ate', explanations) }}
+{{ drawer('uplift_consensus', explanations) }}
+{{ drawer('ipcc_language', explanations) }}
+{{ drawer('cumulative_effect', explanations) }}
+{{ drawer('relative_effect', explanations) }}
+
 <!-- Section 1: Interrupted Time Series -->
 <section class="mb-10">
   <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
     <i data-lucide="trending-up" class="w-5 h-5 text-blue-600"></i>
     Interrupted Time Series
+    {{ info_icon('its') }}
   </h2>
   {% if its %}
   <div class="bg-white rounded-xl border border-gray-200 p-5 mb-4">
     <div id="its-chart" style="height: 320px;"></div>
+    <p class="text-xs text-gray-400 mt-2">
+      Solid line = observed. Dashed grey = counterfactual (what would have happened without intervention).
+      Dotted blue = model fit. Orange line = intervention date.
+    </p>
   </div>
   <div class="grid grid-cols-4 gap-4 mb-3">
     <div class="bg-white rounded-xl border border-gray-200 p-4">
-      <p class="text-xs text-gray-500 uppercase">Level Change</p>
+      <div class="flex items-center gap-1 mb-1">
+        <p class="text-xs text-gray-500 uppercase">Level Change</p>
+        {{ info_icon('level_change') }}
+      </div>
       <p class="text-lg font-bold">{{ "%.4f"|format(its.level_change) }}</p>
       <p class="text-xs text-gray-400">95% CI: [{{ "%.4f"|format(its.level_change_ci[0]) }}, {{ "%.4f"|format(its.level_change_ci[1]) }}]</p>
     </div>
     <div class="bg-white rounded-xl border border-gray-200 p-4">
-      <p class="text-xs text-gray-500 uppercase">Level p-value</p>
+      <p class="text-xs text-gray-500 uppercase mb-1">Level p-value</p>
       <p class="text-lg font-bold {% if its.level_change_p < 0.05 %}text-blue-600{% endif %}">{{ "%.3f"|format(its.level_change_p) }}</p>
-      <p class="text-xs text-gray-400">{% if its.level_change_p < 0.05 %}Significant{% else %}Not significant{% endif %}</p>
+      <p class="text-xs text-gray-400">{% if its.level_change_p < 0.05 %}Significant (p &lt; 0.05){% else %}Not significant{% endif %}</p>
     </div>
     <div class="bg-white rounded-xl border border-gray-200 p-4">
-      <p class="text-xs text-gray-500 uppercase">Slope Change</p>
+      <div class="flex items-center gap-1 mb-1">
+        <p class="text-xs text-gray-500 uppercase">Slope Change</p>
+        {{ info_icon('slope_change') }}
+      </div>
       <p class="text-lg font-bold">{{ "%.4f"|format(its.slope_change) }}/period</p>
       <p class="text-xs text-gray-400">p = {{ "%.3f"|format(its.slope_change_p) }}</p>
     </div>
     <div class="bg-white rounded-xl border border-gray-200 p-4">
-      <p class="text-xs text-gray-500 uppercase">R-squared</p>
+      <p class="text-xs text-gray-500 uppercase mb-1">R-squared</p>
       <p class="text-lg font-bold">{{ "%.3f"|format(its.r_squared) }}</p>
-      <p class="text-xs text-gray-400">Model fit</p>
+      <p class="text-xs text-gray-400">Model fit (1.0 = perfect)</p>
     </div>
   </div>
   <div class="bg-white rounded-xl border border-gray-200 px-5 py-4">
@@ -69,29 +132,43 @@
   <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
     <i data-lucide="bar-chart-3" class="w-5 h-5 text-blue-600"></i>
     Bayesian CausalImpact
+    {{ info_icon('bsts') }}
   </h2>
   {% if bsts %}
   <div class="bg-white rounded-xl border border-gray-200 p-5 mb-4">
     <div id="bsts-chart" style="height: 320px;"></div>
+    <p class="text-xs text-gray-400 mt-2">
+      Solid line = observed. Dashed grey = counterfactual (Bayesian model prediction).
+      Shaded band = 95% credible interval. If observed is outside the band post-intervention, the effect is almost certainly real.
+    </p>
   </div>
   <div class="grid grid-cols-4 gap-4 mb-3">
     <div class="bg-white rounded-xl border border-gray-200 p-4">
-      <p class="text-xs text-gray-500 uppercase">Cumulative Effect</p>
+      <div class="flex items-center gap-1 mb-1">
+        <p class="text-xs text-gray-500 uppercase">Cumulative Effect</p>
+        {{ info_icon('cumulative_effect') }}
+      </div>
       <p class="text-lg font-bold">{{ "%.4f"|format(bsts.cumulative_effect) }}</p>
       <p class="text-xs text-gray-400">95% CI: [{{ "%.4f"|format(bsts.cumulative_ci_lower) }}, {{ "%.4f"|format(bsts.cumulative_ci_upper) }}]</p>
     </div>
     <div class="bg-white rounded-xl border border-gray-200 p-4">
-      <p class="text-xs text-gray-500 uppercase">Relative Effect</p>
+      <div class="flex items-center gap-1 mb-1">
+        <p class="text-xs text-gray-500 uppercase">Relative Effect</p>
+        {{ info_icon('relative_effect') }}
+      </div>
       <p class="text-lg font-bold">{{ "%.1f"|format(bsts.relative_effect_pct) }}%</p>
       <p class="text-xs text-gray-400">vs counterfactual</p>
     </div>
     <div class="bg-white rounded-xl border border-gray-200 p-4">
-      <p class="text-xs text-gray-500 uppercase">P(Causal Effect)</p>
+      <div class="flex items-center gap-1 mb-1">
+        <p class="text-xs text-gray-500 uppercase">P(Causal Effect)</p>
+        {{ info_icon('prob_causal') }}
+      </div>
       <p class="text-lg font-bold text-blue-600">{{ "%.0f"|format(bsts.prob_causal * 100) }}%</p>
       <p class="text-xs text-gray-400">Posterior probability</p>
     </div>
     <div class="bg-white rounded-xl border border-gray-200 p-4">
-      <p class="text-xs text-gray-500 uppercase">Post-period</p>
+      <p class="text-xs text-gray-500 uppercase mb-1">Post-period</p>
       <p class="text-lg font-bold">{{ bsts.periods|length - bsts.intervention_index }} periods</p>
       <p class="text-xs text-gray-400">After intervention</p>
     </div>
@@ -114,37 +191,51 @@
   <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
     <i data-lucide="shield-check" class="w-5 h-5 text-blue-600"></i>
     Doubly Robust Estimator (Lead-Level)
+    {{ info_icon('doubly_robust') }}
   </h2>
   {% if dr %}
   <div class="grid grid-cols-5 gap-4 mb-3">
     <div class="bg-white rounded-xl border border-gray-200 p-4">
-      <p class="text-xs text-gray-500 uppercase">ATE</p>
+      <div class="flex items-center gap-1 mb-1">
+        <p class="text-xs text-gray-500 uppercase">ATE</p>
+        {{ info_icon('ate') }}
+      </div>
       <p class="text-lg font-bold">{{ "%.3f"|format(dr.ate) }}</p>
       <p class="text-xs text-gray-400">Average treatment effect</p>
     </div>
     <div class="bg-white rounded-xl border border-gray-200 p-4">
-      <p class="text-xs text-gray-500 uppercase">95% CI</p>
+      <p class="text-xs text-gray-500 uppercase mb-1">95% CI</p>
       <p class="text-lg font-bold">[{{ "%.3f"|format(dr.ate_ci_lower) }}, {{ "%.3f"|format(dr.ate_ci_upper) }}]</p>
-      <p class="text-xs text-gray-400">Bootstrap</p>
+      <p class="text-xs text-gray-400">Bootstrap (500 samples)</p>
     </div>
     <div class="bg-white rounded-xl border border-gray-200 p-4">
-      <p class="text-xs text-gray-500 uppercase">Treated</p>
+      <p class="text-xs text-gray-500 uppercase mb-1">Treated</p>
       <p class="text-lg font-bold">{{ "{:,}".format(dr.n_treated) }}</p>
       <p class="text-xs text-gray-400">{{ "%.1f"|format(dr.treated_outcome_mean * 100) }}% conversion</p>
     </div>
     <div class="bg-white rounded-xl border border-gray-200 p-4">
-      <p class="text-xs text-gray-500 uppercase">Control</p>
+      <p class="text-xs text-gray-500 uppercase mb-1">Control</p>
       <p class="text-lg font-bold">{{ "{:,}".format(dr.n_control) }}</p>
       <p class="text-xs text-gray-400">{{ "%.1f"|format(dr.control_outcome_mean * 100) }}% conversion</p>
     </div>
     <div class="bg-white rounded-xl border border-gray-200 p-4">
-      <p class="text-xs text-gray-500 uppercase">Propensity AUC</p>
+      <div class="flex items-center gap-1 mb-1">
+        <p class="text-xs text-gray-500 uppercase">Propensity AUC</p>
+        {{ info_icon('propensity_auc') }}
+      </div>
       <p class="text-lg font-bold {% if dr.propensity_auc < 0.55 or dr.propensity_auc > 0.95 %}text-orange-500{% endif %}">{{ "%.2f"|format(dr.propensity_auc) }}</p>
-      <p class="text-xs text-gray-400">Model quality</p>
+      <p class="text-xs text-gray-400">
+        {% if dr.propensity_auc < 0.55 %}Too low — model learned nothing{% elif dr.propensity_auc > 0.95 %}Too high — selection bias risk{% else %}Good range (0.55–0.95){% endif %}
+      </p>
     </div>
   </div>
   <div class="bg-white rounded-xl border border-gray-200 p-5 mb-3">
     <div id="dr-chart" style="height: 200px;"></div>
+    <p class="text-xs text-gray-400 mt-2">
+      Treatment = lead contacted within 24 hours of creation.
+      Control = lead contacted after 24 hours or not yet contacted.
+      Bars show raw conversion rates; ATE is the propensity-adjusted difference.
+    </p>
   </div>
   <div class="bg-white rounded-xl border border-gray-200 px-5 py-4">
     <div class="flex items-start gap-2">
@@ -165,10 +256,15 @@
   <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
     <i data-lucide="scale" class="w-5 h-5 text-blue-600"></i>
     Uplift Consensus
+    {{ info_icon('uplift_consensus') }}
   </h2>
   {% if uplift and uplift.statements %}
   <div class="bg-blue-50 border border-blue-200 rounded-xl px-6 py-5 mb-4">
     <p class="text-base font-semibold text-blue-900">{{ uplift.consensus }}</p>
+    <p class="text-xs text-blue-600 mt-1">
+      Based on IPCC probability language — three independent causal methods synthesised into one verdict.
+      <button class="underline ml-1" onclick="toggleDrawer('ipcc_language')">What does this language mean?</button>
+    </p>
   </div>
   <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
     <table class="w-full text-sm">

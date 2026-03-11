@@ -1,4 +1,4 @@
-{% macro sidebar(active='') %}
+{% macro sidebar(active='', tenant='', tenants=[]) %}
 {% set bc = '#1e3a5f' %}
 <aside class="fixed left-0 top-0 h-screen w-60 bg-white border-r border-gray-200 z-20 flex flex-col">
 
@@ -8,9 +8,23 @@
     <p class="text-xs uppercase tracking-widest text-gray-400 mt-1">Analytics</p>
   </div>
 
+  <!-- Tenant switcher -->
+  {% if tenants|length > 1 %}
+  <div class="px-4 pb-3">
+    <label class="block text-[10px] uppercase tracking-widest text-gray-400 mb-1.5 px-1">Client</label>
+    <select id="tenant-switcher"
+            onchange="switchTenant(this.value)"
+            class="w-full text-sm font-medium text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 cursor-pointer">
+      {% for t in tenants %}
+      <option value="{{ t }}" {% if t == tenant %}selected{% endif %}>{{ t }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+
   <!-- Nav links -->
   <nav class="flex-1 px-3 mt-2 space-y-1">
-    <a href="/analytics/"
+    <a href="/analytics/?tenant={{ tenant }}"
        class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
               {% if active == 'dashboard' %}font-semibold{% else %}text-gray-500 hover:text-gray-900 hover:bg-gray-50{% endif %}"
        {% if active == 'dashboard' %}style="background-color: {{ bc }}12; color: {{ bc }}"{% endif %}>
@@ -18,7 +32,7 @@
       Dashboard
     </a>
 
-    <a href="/analytics/control-charts"
+    <a href="/analytics/control-charts?tenant={{ tenant }}"
        class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
               {% if active == 'control_charts' %}font-semibold{% else %}text-gray-500 hover:text-gray-900 hover:bg-gray-50{% endif %}"
        {% if active == 'control_charts' %}style="background-color: {{ bc }}12; color: {{ bc }}"{% endif %}>
@@ -26,7 +40,7 @@
       Control Charts
     </a>
 
-    <a href="/analytics/survival"
+    <a href="/analytics/survival?tenant={{ tenant }}"
        class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
               {% if active == 'survival' %}font-semibold{% else %}text-gray-500 hover:text-gray-900 hover:bg-gray-50{% endif %}"
        {% if active == 'survival' %}style="background-color: {{ bc }}12; color: {{ bc }}"{% endif %}>
@@ -34,7 +48,7 @@
       Survival Analysis
     </a>
 
-    <a href="/analytics/bottleneck"
+    <a href="/analytics/bottleneck?tenant={{ tenant }}"
        class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
               {% if active == 'bottleneck' %}font-semibold{% else %}text-gray-500 hover:text-gray-900 hover:bg-gray-50{% endif %}"
        {% if active == 'bottleneck' %}style="background-color: {{ bc }}12; color: {{ bc }}"{% endif %}>
@@ -46,7 +60,7 @@
     <div class="border-t border-gray-100 my-3 mx-0"></div>
     <p class="px-3 text-[10px] uppercase tracking-widest text-gray-400 mb-1">Causal</p>
 
-    <a href="/analytics/causal"
+    <a href="/analytics/causal?tenant={{ tenant }}"
        class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
               {% if active == 'causal' %}font-semibold{% else %}text-gray-500 hover:text-gray-900 hover:bg-gray-50{% endif %}"
        {% if active == 'causal' %}style="background-color: {{ bc }}12; color: {{ bc }}"{% endif %}>
@@ -54,7 +68,7 @@
       Causal Attribution
     </a>
 
-    <a href="/analytics/cohort"
+    <a href="/analytics/cohort?tenant={{ tenant }}"
        class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
               {% if active == 'cohort' %}font-semibold{% else %}text-gray-500 hover:text-gray-900 hover:bg-gray-50{% endif %}"
        {% if active == 'cohort' %}style="background-color: {{ bc }}12; color: {{ bc }}"{% endif %}>
@@ -69,4 +83,12 @@
   </div>
 
 </aside>
+
+<script>
+function switchTenant(slug) {
+  const url = new URL(window.location);
+  url.searchParams.set('tenant', slug);
+  window.location.href = url.toString();
+}
+</script>
 {% endmacro %}

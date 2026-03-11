@@ -1,7 +1,10 @@
 {% extends "_base.html" %}
+{% from "_explainer.html" import info_icon, drawer %}
+{% from "_digest.html" import digest_card %}
 {% block title %}Cohort Analysis{% endblock %}
 
 {% block content %}
+{{ digest_card(digest) }}
 <div class="flex items-center justify-between mb-6">
   <div>
     <h1 class="text-2xl font-bold">Cohort Analysis</h1>
@@ -19,25 +22,62 @@
   </form>
 </div>
 
+<!-- Page-level concept bar -->
+<div class="flex flex-wrap items-center gap-4 mb-6 bg-white rounded-xl border border-gray-200 px-5 py-3">
+  <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Concepts</p>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('cohort_heatmap')">
+    {{ info_icon('cohort_heatmap') }} Cohort heatmap
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('cohort_triangular')">
+    {{ info_icon('cohort_triangular') }} Triangular structure
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('cumulative_conversion')">
+    {{ info_icon('cumulative_conversion') }} Cumulative conversion
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('simpsons_paradox')">
+    {{ info_icon('simpsons_paradox') }} Simpson's Paradox
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('pre_post_comparison')">
+    {{ info_icon('pre_post_comparison') }} Pre/post comparison
+  </button>
+</div>
+{{ drawer('cohort_heatmap', explanations) }}
+{{ drawer('cohort_triangular', explanations) }}
+{{ drawer('cumulative_conversion', explanations) }}
+{{ drawer('simpsons_paradox', explanations) }}
+{{ drawer('pre_post_comparison', explanations) }}
+
 <!-- Section 1: Cohort Heatmap -->
 <section class="mb-10">
   <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
     <i data-lucide="grid-3x3" class="w-5 h-5 text-blue-600"></i>
     Cumulative Conversion by Cohort
+    {{ info_icon('cohort_heatmap') }}
   </h2>
   {% if matrix %}
   <div class="bg-white rounded-xl border border-gray-200 p-5 mb-4">
     <div id="cohort-heatmap" style="height: {{ [300, matrix.cohort_labels|length * 28 + 80] | max }}px;"></div>
   </div>
-  <div class="bg-white rounded-xl border border-gray-200 px-5 py-4">
+
+  <!-- Reading guide -->
+  <div class="bg-white rounded-xl border border-gray-200 px-5 py-4 mb-4">
     <div class="flex items-start gap-2">
-      <i data-lucide="info" class="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0"></i>
-      <p class="text-sm text-gray-700">
-        Each row is a cohort of leads grouped by the month they entered the pipeline.
-        Columns show cumulative conversion rate at 0, 1, 2... months after entry.
-        Recent cohorts have fewer elapsed months (blank cells).
-        {{ matrix.cohort_labels|length }} cohorts, {{ matrix.cohort_sizes|sum }} total leads.
-      </p>
+      <i data-lucide="info" class="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0"></i>
+      <div class="text-sm text-gray-700 space-y-1">
+        <p>
+          <strong>Rows</strong> = monthly cohorts (leads grouped by the month they entered the pipeline).
+          <strong>Columns</strong> = months elapsed since entry.
+          <strong>Colour intensity</strong> = cumulative conversion rate (darker = more converted).
+        </p>
+        <p>
+          <strong>Blank cells (bottom-right)</strong> = time that hasn't elapsed yet for recent cohorts — not missing data.
+          {{ matrix.cohort_labels|length }} cohorts shown, {{ matrix.cohort_sizes|sum }} total leads.
+        </p>
+        <p class="text-xs text-gray-500">
+          Compare cohorts at the same elapsed month to see if newer cohorts are converting faster or slower.
+          Do not compare a recent cohort's Month 1 rate to an older cohort's final rate — that's the triangular trap.
+        </p>
+      </div>
     </div>
   </div>
   {% else %}
@@ -52,6 +92,7 @@
   <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
     <i data-lucide="alert-triangle" class="w-5 h-5 text-blue-600"></i>
     Simpson's Paradox Check
+    {{ info_icon('simpsons_paradox') }}
   </h2>
   {% if simpson %}
   {% if simpson.has_paradox %}
@@ -61,6 +102,10 @@
       <div>
         <p class="font-semibold text-orange-900">Simpson's Paradox Detected</p>
         <p class="text-sm text-orange-800 mt-1">{{ simpson.explanation }}</p>
+        <p class="text-xs text-orange-700 mt-2">
+          The aggregate trend is misleading — look at the per-source breakdown below for the true picture.
+          This typically happens when the mix of lead sources shifted significantly between periods.
+        </p>
       </div>
     </div>
   </div>
@@ -71,30 +116,41 @@
       <div>
         <p class="font-semibold text-blue-900">No Simpson's Paradox</p>
         <p class="text-sm text-blue-800 mt-1">{{ simpson.explanation }}</p>
+        <p class="text-xs text-blue-700 mt-2">
+          The aggregate trend and per-source trends are consistent — you can trust the top-line numbers.
+        </p>
       </div>
     </div>
   </div>
   {% endif %}
 
-  <!-- Aggregate -->
+  <!-- Aggregate cards -->
   <div class="grid grid-cols-3 gap-4 mb-4">
     <div class="bg-white rounded-xl border border-gray-200 p-4">
-      <p class="text-xs text-gray-500 uppercase">Pre-intervention Rate</p>
+      <div class="flex items-center gap-1 mb-1">
+        <p class="text-xs text-gray-500 uppercase">Pre-intervention Rate</p>
+        {{ info_icon('pre_post_comparison') }}
+      </div>
       <p class="text-lg font-bold">{{ "%.1f"|format(simpson.aggregate_rate_pre * 100) }}%</p>
     </div>
     <div class="bg-white rounded-xl border border-gray-200 p-4">
-      <p class="text-xs text-gray-500 uppercase">Post-intervention Rate</p>
+      <p class="text-xs text-gray-500 uppercase mb-1">Post-intervention Rate</p>
       <p class="text-lg font-bold">{{ "%.1f"|format(simpson.aggregate_rate_post * 100) }}%</p>
     </div>
     <div class="bg-white rounded-xl border border-gray-200 p-4">
-      <p class="text-xs text-gray-500 uppercase">Aggregate Direction</p>
+      <p class="text-xs text-gray-500 uppercase mb-1">Aggregate Direction</p>
       <p class="text-lg font-bold">{{ simpson.aggregate_direction | title }}</p>
+      <p class="text-xs text-gray-400">Check per-source below to see if this holds</p>
     </div>
   </div>
 
   <!-- Source breakdown table -->
   {% if simpson.breakdowns %}
   <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <div class="px-4 py-3 border-b border-gray-100 flex items-center gap-2 bg-gray-50">
+      <p class="text-xs font-semibold text-gray-500 uppercase">Per-Source Breakdown</p>
+      {{ info_icon('pre_post_comparison') }}
+    </div>
     <table class="w-full text-sm">
       <thead class="bg-gray-50 border-b border-gray-200">
         <tr>
@@ -119,7 +175,7 @@
             <span class="text-gray-500">Down</span>
             {% endif %}
             {% if b.direction != simpson.aggregate_direction %}
-            <span class="ml-1 text-orange-500 text-xs">(contrary)</span>
+            <span class="ml-1 text-orange-500 text-xs font-medium">(contrary to aggregate)</span>
             {% endif %}
           </td>
           <td class="px-4 py-3 text-right text-gray-500">{{ "{:,}".format(b.n_pre) }}</td>
@@ -128,6 +184,12 @@
         {% endfor %}
       </tbody>
     </table>
+    <div class="px-4 py-3 border-t border-gray-100">
+      <p class="text-xs text-gray-500">
+        Orange rows indicate sources whose direction contradicts the aggregate trend — the hallmark of Simpson's Paradox.
+        Sources need at least 10 leads in both periods to be included.
+      </p>
+    </div>
   </div>
   {% endif %}
   {% else %}

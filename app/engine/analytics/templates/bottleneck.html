@@ -1,11 +1,43 @@
 {% extends "_base.html" %}
+{% from "_explainer.html" import info_icon, drawer %}
+{% from "_digest.html" import digest_card %}
 {% block title %}Bottleneck Analysis{% endblock %}
 
 {% block content %}
-<div class="mb-8">
+{{ digest_card(digest) }}
+<div class="mb-6">
   <h1 class="text-2xl font-bold text-gray-900">Bottleneck Analysis</h1>
   <p class="text-sm text-gray-500 mt-1">Little's Law — L = &lambda; &times; W — {{ tenant }} (last {{ lookback }} days)</p>
 </div>
+
+<!-- Page-level concept bar -->
+<div class="flex flex-wrap items-center gap-4 mb-6 bg-white rounded-xl border border-gray-200 px-5 py-3">
+  <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Concepts</p>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('littles_law')">
+    {{ info_icon('littles_law') }} Little's Law
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('throughput')">
+    {{ info_icon('throughput') }} Throughput
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('wip')">
+    {{ info_icon('wip') }} WIP
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('utilisation_rho')">
+    {{ info_icon('utilisation_rho') }} Utilisation (&rho;)
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('constraint')">
+    {{ info_icon('constraint') }} Constraint
+  </button>
+  <button class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600" onclick="toggleDrawer('cycle_time')">
+    {{ info_icon('cycle_time') }} Cycle time
+  </button>
+</div>
+{{ drawer('littles_law', explanations) }}
+{{ drawer('throughput', explanations) }}
+{{ drawer('wip', explanations) }}
+{{ drawer('utilisation_rho', explanations) }}
+{{ drawer('constraint', explanations) }}
+{{ drawer('cycle_time', explanations) }}
 
 {% if not stages %}
 <div class="text-center py-16 bg-white rounded-xl border border-gray-200">
@@ -16,25 +48,36 @@
 
 <!-- Throughput Chart -->
 <div class="bg-white rounded-xl border border-gray-200 p-6 mb-8">
-  <h2 class="text-base font-semibold text-gray-900 mb-1">Throughput by Stage</h2>
-  <p class="text-xs text-gray-500 mb-4">Exits per week. The stage with the lowest throughput is the pipeline constraint.</p>
+  <div class="flex items-center gap-2 mb-1">
+    <h2 class="text-base font-semibold text-gray-900">Throughput by Stage</h2>
+    {{ info_icon('throughput') }}
+  </div>
+  <p class="text-xs text-gray-500 mb-4">
+    Exits per week. The stage with the lowest throughput is the pipeline constraint —
+    highlighted in orange. Improving any other stage first has zero impact on overall flow.
+  </p>
   <div id="throughput-chart" style="height: 240px;"></div>
 </div>
 
 <!-- Stage Metrics Table -->
 <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-  <div class="px-6 py-4 border-b border-gray-200">
+  <div class="px-6 py-4 border-b border-gray-200 flex items-center gap-2">
     <h2 class="text-base font-semibold text-gray-900">Stage Metrics</h2>
+    {{ info_icon('littles_law') }}
   </div>
   <table class="w-full">
     <thead class="bg-gray-50 border-b border-gray-200">
       <tr>
         <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Stage</th>
-        <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">WIP</th>
+        <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3 cursor-pointer" onclick="toggleDrawer('wip')">
+          WIP {{ info_icon('wip') }}
+        </th>
         <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Throughput/wk</th>
         <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Arrivals/wk</th>
         <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Median Dwell</th>
-        <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">&rho; (Utilisation)</th>
+        <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3 cursor-pointer" onclick="toggleDrawer('utilisation_rho')">
+          &rho; (Utilisation) {{ info_icon('utilisation_rho') }}
+        </th>
         <th class="text-center text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Status</th>
       </tr>
     </thead>
@@ -72,7 +115,7 @@
   </table>
 </div>
 
-<!-- Explanation -->
+<!-- Explanation footer -->
 <div class="mt-6 bg-white rounded-xl border border-gray-200 px-5 py-4">
   <div class="flex items-start gap-3">
     <i data-lucide="info" class="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0"></i>
