@@ -57,6 +57,20 @@
   </div>
 </div>
 
+<!-- Goal tabs -->
+{% if goals | length > 1 %}
+<div class="flex gap-1 mb-6 border-b border-gray-200">
+  {% for g in goals %}
+  <a href="?goal={{ g }}" class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors
+    {% if g == selected_goal %}border-gray-900 text-gray-900
+    {% else %}border-transparent text-gray-500 hover:text-gray-700{% endif %}">
+    {{ g | replace('_', ' ') | title }}
+    {% if g == primary_goal %}<span class="text-[10px] text-blue-600 ml-1">Primary</span>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
 <!-- Summary cards -->
 <div class="grid grid-cols-4 gap-4 mb-8">
   <div class="bg-white rounded-xl border border-gray-200 p-5">
@@ -359,11 +373,18 @@
   // 3. Apply variant (customise this for your page)
   // document.querySelector('#headline').textContent = variant_id;
 
-  // 4. On conversion (e.g. form submit, button click):
+  // 4. Inject variant_id into forms (carries through to CRM)
+  document.querySelectorAll('form').forEach(f =&gt; {
+    const h = document.createElement('input');
+    h.type = 'hidden'; h.name = 'humtech_variant_id'; h.value = variant_id;
+    f.appendChild(h);
+  });
+
+  // 5. On conversion (e.g. form submit, button click):
   // await fetch(`${API}/track`, {
   //   method: 'POST',
   //   headers: {'Content-Type': 'application/json'},
-  //   body: JSON.stringify({ experiment_id: EXP, variant_id, event_type: 'conversion' })
+  //   body: JSON.stringify({ experiment_id: EXP, variant_id, event_type: 'conversion', goal: '{{ goals[0] if goals else "conversion" }}' })
   // });
 })();
 &lt;/script&gt;</code></pre>

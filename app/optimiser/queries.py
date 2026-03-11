@@ -111,8 +111,8 @@ RETURNING level_id;
 
 INSERT_OBSERVATION = """
 INSERT INTO optimiser.observations
-    (tenant_id, experiment_id, variant_id, event_type, value, visitor_id, source)
-VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7)
+    (tenant_id, experiment_id, variant_id, event_type, value, visitor_id, source, goal)
+VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8)
 RETURNING observation_id;
 """
 
@@ -120,24 +120,39 @@ RETURNING observation_id;
 # Daily stats
 # ---------------------------------------------------------------------------
 
-ROLLUP_DAILY_STATS = """
-INSERT INTO optimiser.daily_stats (tenant_id, experiment_id, variant_id, day, impressions, conversions, total_value, computed_at)
+ROLLUP_CONVERSIONS = """
+INSERT INTO optimiser.daily_stats
+    (tenant_id, experiment_id, variant_id, day, goal, impressions, conversions, total_value, computed_at)
 SELECT
     tenant_id, experiment_id, variant_id,
     recorded_at::date AS day,
-    COUNT(*) FILTER (WHERE event_type = 'impression'),
-    COUNT(*) FILTER (WHERE event_type = 'conversion'),
-    COALESCE(SUM(value) FILTER (WHERE event_type = 'conversion'), 0),
+    goal,
+    0,
+    COUNT(*),
+    COALESCE(SUM(value), 0),
     now()
 FROM optimiser.observations
-WHERE experiment_id = $1::uuid
-GROUP BY tenant_id, experiment_id, variant_id, recorded_at::date
+WHERE experiment_id = $1::uuid AND event_type = 'conversion'
+GROUP BY tenant_id, experiment_id, variant_id, recorded_at::date, goal
 ON CONFLICT ON CONSTRAINT uq_daily_stats
 DO UPDATE SET
-    impressions = EXCLUDED.impressions,
     conversions = EXCLUDED.conversions,
     total_value = EXCLUDED.total_value,
     computed_at = now();
+"""
+
+ROLLUP_IMPRESSIONS = """
+UPDATE optimiser.daily_stats ds
+SET impressions = sub.imp, computed_at = now()
+FROM (
+    SELECT variant_id, recorded_at::date AS day, COUNT(*) AS imp
+    FROM optimiser.observations
+    WHERE experiment_id = $1::uuid AND event_type = 'impression'
+    GROUP BY variant_id, recorded_at::date
+) sub
+WHERE ds.experiment_id = $1::uuid
+  AND ds.variant_id = sub.variant_id
+  AND ds.day = sub.day;
 """
 
 VARIANT_TOTALS = """
@@ -149,6 +164,7 @@ SELECT
 FROM optimiser.variants v
 LEFT JOIN optimiser.daily_stats ds
     ON ds.variant_id = v.variant_id AND ds.experiment_id = v.experiment_id
+    AND ds.goal = $3
 WHERE v.tenant_id = $1::uuid AND v.experiment_id = $2::uuid AND v.is_active = TRUE
 GROUP BY v.variant_id, v.label, v.is_control
 ORDER BY v.sort_order, v.created_at;
@@ -160,7 +176,7 @@ SELECT
     ds.day, ds.impressions, ds.conversions
 FROM optimiser.daily_stats ds
 JOIN optimiser.variants v ON v.variant_id = ds.variant_id
-WHERE ds.experiment_id = $1::uuid
+WHERE ds.experiment_id = $1::uuid AND ds.goal = $2
 ORDER BY ds.day, v.sort_order;
 """
 
@@ -180,6 +196,7 @@ SELECT
 FROM optimiser.variants v
 LEFT JOIN optimiser.daily_stats ds
     ON ds.variant_id = v.variant_id AND ds.experiment_id = v.experiment_id
+    AND ds.goal = $3
 WHERE v.tenant_id = $1::uuid AND v.experiment_id = $2::uuid AND v.is_active = TRUE
 GROUP BY v.variant_id, v.label, v.factor_values
 ORDER BY v.sort_order;
@@ -197,6 +214,7 @@ SELECT
 FROM optimiser.variants v
 LEFT JOIN optimiser.daily_stats ds
     ON ds.variant_id = v.variant_id AND ds.experiment_id = v.experiment_id
+    AND ds.goal = $2
 WHERE v.experiment_id = $1::uuid AND v.is_active = TRUE
 GROUP BY v.variant_id
 ORDER BY v.sort_order;

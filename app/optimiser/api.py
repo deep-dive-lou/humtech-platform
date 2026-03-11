@@ -41,6 +41,7 @@ def _cors_json(data: dict, status_code: int = 200) -> JSONResponse:
 
 @router.options("/track")
 @router.options("/allocate/{experiment_id}")
+@router.options("/webhook")
 async def cors_preflight():
     return JSONResponse(content={}, headers=_CORS_HEADERS)
 
@@ -53,6 +54,7 @@ class TrackEvent(BaseModel):
     experiment_id: str
     variant_id: str
     event_type: str  # 'impression' or 'conversion'
+    goal: str = "conversion"  # which conversion goal (ignored for impressions)
     value: Optional[float] = None
     visitor_id: Optional[str] = None
     source: Optional[str] = "js_snippet"
@@ -73,6 +75,8 @@ async def track(body: TrackEvent):
         if not exp:
             return _cors_json({"error": "experiment not found or not running"}, 404)
 
+        # For impressions, goal is stored but irrelevant to rollup
+        goal = body.goal if body.event_type == "conversion" else "conversion"
         await conn.execute(
             INSERT_OBSERVATION,
             exp["tenant_id"],
@@ -82,6 +86,7 @@ async def track(body: TrackEvent):
             body.value,
             body.visitor_id,
             body.source,
+            goal,
         )
 
     return _cors_json({"ok": True})
@@ -106,12 +111,14 @@ async def allocate(experiment_id: str):
         config = json.loads(exp["config"]) if isinstance(exp["config"], str) else (exp["config"] or {})
         prior_alpha = config.get("prior_alpha", 1)
         prior_beta = config.get("prior_beta", 1)
+        goals = config.get("goals", ["conversion"])
+        primary_goal = config.get("primary_goal", goals[0] if goals else "conversion")
 
         # Rollup first to ensure fresh stats
         await rollup_experiment(conn, experiment_id)
 
-        # Fetch posteriors
-        rows = await conn.fetch(VARIANT_POSTERIORS, experiment_id)
+        # Fetch posteriors for the primary goal (used for allocation decisions)
+        rows = await conn.fetch(VARIANT_POSTERIORS, experiment_id, primary_goal)
         if not rows:
             return _cors_json({"error": "no active variants"}, 404)
 
@@ -139,3 +146,49 @@ async def allocate(experiment_id: str):
         chosen_id = stats.thompson_allocate(variants)
 
     return _cors_json({"variant_id": chosen_id})
+
+
+# ---------------------------------------------------------------------------
+# POST /optimiser/api/webhook — CRM inbound webhook for downstream conversions
+# ---------------------------------------------------------------------------
+
+class WebhookEvent(BaseModel):
+    experiment_id: str
+    variant_id: str
+    goal: str  # e.g. 'booking', 'proposal', 'won'
+    visitor_id: Optional[str] = None
+    value: Optional[float] = None
+
+
+@router.post("/webhook")
+async def webhook(body: WebhookEvent, request: Request):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        exp = await conn.fetchrow(
+            "SELECT tenant_id, config FROM optimiser.experiments WHERE experiment_id = $1::uuid AND status = 'running'",
+            body.experiment_id,
+        )
+        if not exp:
+            return _cors_json({"error": "experiment not found or not running"}, 404)
+
+        # Verify webhook key
+        config = json.loads(exp["config"]) if isinstance(exp["config"], str) else (exp["config"] or {})
+        webhook_key = config.get("webhook_key")
+        if webhook_key:
+            provided_key = request.headers.get("X-Webhook-Key", "")
+            if provided_key != webhook_key:
+                return _cors_json({"error": "invalid webhook key"}, 403)
+
+        await conn.execute(
+            INSERT_OBSERVATION,
+            exp["tenant_id"],
+            body.experiment_id,
+            body.variant_id,
+            "conversion",
+            body.value,
+            body.visitor_id,
+            "webhook",
+            body.goal,
+        )
+
+    return _cors_json({"ok": True})

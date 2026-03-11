@@ -13,6 +13,7 @@ import uuid as _uuid
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
+from uuid import uuid4
 
 import asyncpg
 from fastapi import APIRouter, Depends, Form, Request
@@ -108,18 +109,31 @@ async def create_experiment(
     min_days: int = Form(7),
     variant_labels: str = Form(""),  # comma-separated (bandit mode)
     factor_data: str = Form(""),  # JSON array of {name, levels} (taguchi mode)
+    goals_input: str = Form(""),  # comma-separated goal names
+    primary_goal_input: str = Form(""),  # which goal is primary
 ):
     tenant_id = staff["tenant_id"]
 
+    # Parse goals
+    goal_list = [g.strip() for g in goals_input.split(",") if g.strip()] if goals_input.strip() else ["conversion"]
+    p_goal = primary_goal_input.strip() if primary_goal_input.strip() else goal_list[0]
+    if p_goal not in goal_list:
+        p_goal = goal_list[0]
+
     # Default config per mode
-    config: dict = {"prior_alpha": 1, "prior_beta": 1}
+    config: dict = {
+        "prior_alpha": 1,
+        "prior_beta": 1,
+        "goals": goal_list,
+        "primary_goal": p_goal,
+        "webhook_key": str(uuid4()),
+    }
 
     async with conn.transaction():
         # For evolutionary mode, parse GA config from form
         if mode == "evolutionary":
             form_data = await request.form()
-            config = {
-                "prior_alpha": 1, "prior_beta": 1,
+            config.update({
                 "pop_size": int(form_data.get("pop_size", 8)),
                 "mutation_rate": float(form_data.get("mutation_rate", 0.1)),
                 "gene_mutation_prob": float(form_data.get("gene_mutation_prob", 0.2)),
@@ -129,7 +143,7 @@ async def create_experiment(
                 "max_generations": int(form_data.get("max_generations", 20)),
                 "neighbourhood_radius": int(form_data.get("neighbourhood_radius", 2)),
                 "use_relative_fitness": True,
-            }
+            })
 
         row = await conn.fetchrow(
             INSERT_EXPERIMENT,
@@ -287,12 +301,19 @@ async def experiment_detail(
     # Rollup observations → daily_stats
     await rollup_experiment(conn, experiment_id)
 
-    # Variant totals
-    rows = await conn.fetch(VARIANT_TOTALS, tenant_id, experiment_id)
+    # Extract goal config
+    config = json.loads(exp["config"]) if isinstance(exp["config"], str) else (exp["config"] or {})
+    goals = config.get("goals", ["conversion"])
+    primary_goal = config.get("primary_goal", goals[0] if goals else "conversion")
+    selected_goal = request.query_params.get("goal", primary_goal)
+    if selected_goal not in goals:
+        selected_goal = primary_goal
+
+    # Variant totals (filtered by selected goal)
+    rows = await conn.fetch(VARIANT_TOTALS, tenant_id, experiment_id, selected_goal)
     variant_rows = [dict(r) for r in rows]
 
     # Compute Bayesian stats for each variant
-    config = json.loads(exp["config"]) if isinstance(exp["config"], str) else (exp["config"] or {})
     prior_alpha = config.get("prior_alpha", 1)
     prior_beta = config.get("prior_beta", 1)
 
@@ -359,7 +380,7 @@ async def experiment_detail(
             v["sprt_statistic"] = vr.get("sprt_statistic", 0)
 
     # Daily series for convergence chart
-    daily_rows = await conn.fetch(DAILY_SERIES, experiment_id)
+    daily_rows = await conn.fetch(DAILY_SERIES, experiment_id, selected_goal)
     daily_data = [dict(r) for r in daily_rows]
 
     # Build cumulative sequential CI series for convergence chart
@@ -386,7 +407,7 @@ async def experiment_detail(
     # Taguchi ANOVA analysis
     taguchi_data = None
     if exp["mode"] == "taguchi" and total_impressions > 0:
-        taguchi_data = await _compute_taguchi_analysis(conn, tenant_id, experiment_id)
+        taguchi_data = await _compute_taguchi_analysis(conn, tenant_id, experiment_id, selected_goal)
 
     # Evolutionary generation data
     evo_data = None
@@ -407,6 +428,9 @@ async def experiment_detail(
         "total_conversions": total_conversions,
         "taguchi": _sanitize(taguchi_data),
         "evo": _sanitize(evo_data),
+        "goals": goals,
+        "selected_goal": selected_goal,
+        "primary_goal": primary_goal,
     })
 
 
@@ -489,7 +513,7 @@ async def _compute_evo_data(
 # ---------------------------------------------------------------------------
 
 async def _compute_taguchi_analysis(
-    conn: asyncpg.Connection, tenant_id: str, experiment_id: str,
+    conn: asyncpg.Connection, tenant_id: str, experiment_id: str, goal: str = "conversion",
 ) -> dict | None:
     """Compute ANOVA factor contributions and main effects for a Taguchi experiment."""
     # Fetch factors and their levels
@@ -508,7 +532,7 @@ async def _compute_taguchi_analysis(
         })
 
     # Fetch variant observations with factor_values
-    obs_rows = await conn.fetch(TAGUCHI_OBSERVATIONS, tenant_id, experiment_id)
+    obs_rows = await conn.fetch(TAGUCHI_OBSERVATIONS, tenant_id, experiment_id, goal)
     if not obs_rows:
         return None
 
@@ -669,8 +693,10 @@ async def advance_generation(
             parent_ids=m.get("parent_ids", []),
         ))
 
-    # Fetch observations for fitness evaluation
-    variant_totals = await conn.fetch(VARIANT_TOTALS, tenant_id, experiment_id)
+    # Fetch observations for fitness evaluation (use primary goal)
+    goals = config_raw.get("goals", ["conversion"])
+    primary_goal = config_raw.get("primary_goal", goals[0] if goals else "conversion")
+    variant_totals = await conn.fetch(VARIANT_TOTALS, tenant_id, experiment_id, primary_goal)
     observations = {}
     control_variant_id = None
     for vt in variant_totals:
