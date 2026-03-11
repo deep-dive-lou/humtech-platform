@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import os
+import uuid as _uuid
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
@@ -39,9 +41,13 @@ templates = Jinja2Templates(
 
 
 def _sanitize(obj):
-    """Recursively convert Decimal to float so Jinja tojson works."""
+    """Recursively convert non-JSON-native types so Jinja tojson works."""
     if isinstance(obj, Decimal):
         return float(obj)
+    if isinstance(obj, _uuid.UUID):
+        return str(obj)
+    if isinstance(obj, (date, datetime)):
+        return obj.isoformat()
     if isinstance(obj, dict):
         return {k: _sanitize(v) for k, v in obj.items()}
     if isinstance(obj, list):
