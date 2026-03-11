@@ -1,0 +1,202 @@
+{% extends "_base.html" %}
+{% block title %}Cohort Analysis{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <div>
+    <h1 class="text-2xl font-bold">Cohort Analysis</h1>
+    <p class="text-sm text-gray-500">{{ tenant }} — conversion by entry cohort, Simpson's Paradox check</p>
+  </div>
+  <form method="get" class="flex items-center gap-3">
+    <input type="hidden" name="tenant" value="{{ tenant }}">
+    <label class="text-xs text-gray-500 uppercase">Lookback</label>
+    <select name="lookback_months" onchange="this.form.submit()"
+            class="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white">
+      {% for m in [6, 12, 24, 36, 48] %}
+      <option value="{{ m }}" {% if m == lookback_months %}selected{% endif %}>{{ m }} months</option>
+      {% endfor %}
+    </select>
+  </form>
+</div>
+
+<!-- Section 1: Cohort Heatmap -->
+<section class="mb-10">
+  <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
+    <i data-lucide="grid-3x3" class="w-5 h-5 text-blue-600"></i>
+    Cumulative Conversion by Cohort
+  </h2>
+  {% if matrix %}
+  <div class="bg-white rounded-xl border border-gray-200 p-5 mb-4">
+    <div id="cohort-heatmap" style="height: {{ [300, matrix.cohort_labels|length * 28 + 80] | max }}px;"></div>
+  </div>
+  <div class="bg-white rounded-xl border border-gray-200 px-5 py-4">
+    <div class="flex items-start gap-2">
+      <i data-lucide="info" class="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0"></i>
+      <p class="text-sm text-gray-700">
+        Each row is a cohort of leads grouped by the month they entered the pipeline.
+        Columns show cumulative conversion rate at 0, 1, 2... months after entry.
+        Recent cohorts have fewer elapsed months (blank cells).
+        {{ matrix.cohort_labels|length }} cohorts, {{ matrix.cohort_sizes|sum }} total leads.
+      </p>
+    </div>
+  </div>
+  {% else %}
+  <div class="bg-gray-50 rounded-xl border border-gray-200 px-5 py-8 text-center text-sm text-gray-400">
+    No cohort data available for this tenant and lookback period.
+  </div>
+  {% endif %}
+</section>
+
+<!-- Section 2: Simpson's Paradox Check -->
+<section class="mb-10">
+  <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
+    <i data-lucide="alert-triangle" class="w-5 h-5 text-blue-600"></i>
+    Simpson's Paradox Check
+  </h2>
+  {% if simpson %}
+  {% if simpson.has_paradox %}
+  <div class="bg-orange-50 border border-orange-200 rounded-xl px-6 py-5 mb-4">
+    <div class="flex items-start gap-3">
+      <i data-lucide="alert-triangle" class="w-5 h-5 text-orange-500 mt-0.5 flex-shrink-0"></i>
+      <div>
+        <p class="font-semibold text-orange-900">Simpson's Paradox Detected</p>
+        <p class="text-sm text-orange-800 mt-1">{{ simpson.explanation }}</p>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="bg-blue-50 border border-blue-200 rounded-xl px-6 py-5 mb-4">
+    <div class="flex items-start gap-3">
+      <i data-lucide="check-circle" class="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0"></i>
+      <div>
+        <p class="font-semibold text-blue-900">No Simpson's Paradox</p>
+        <p class="text-sm text-blue-800 mt-1">{{ simpson.explanation }}</p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Aggregate -->
+  <div class="grid grid-cols-3 gap-4 mb-4">
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 uppercase">Pre-intervention Rate</p>
+      <p class="text-lg font-bold">{{ "%.1f"|format(simpson.aggregate_rate_pre * 100) }}%</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 uppercase">Post-intervention Rate</p>
+      <p class="text-lg font-bold">{{ "%.1f"|format(simpson.aggregate_rate_post * 100) }}%</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 uppercase">Aggregate Direction</p>
+      <p class="text-lg font-bold">{{ simpson.aggregate_direction | title }}</p>
+    </div>
+  </div>
+
+  <!-- Source breakdown table -->
+  {% if simpson.breakdowns %}
+  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 border-b border-gray-200">
+        <tr>
+          <th class="text-left px-4 py-3 text-xs uppercase text-gray-500 font-medium">Source</th>
+          <th class="text-left px-4 py-3 text-xs uppercase text-gray-500 font-medium">Pre Rate</th>
+          <th class="text-left px-4 py-3 text-xs uppercase text-gray-500 font-medium">Post Rate</th>
+          <th class="text-left px-4 py-3 text-xs uppercase text-gray-500 font-medium">Direction</th>
+          <th class="text-right px-4 py-3 text-xs uppercase text-gray-500 font-medium">n (pre)</th>
+          <th class="text-right px-4 py-3 text-xs uppercase text-gray-500 font-medium">n (post)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in simpson.breakdowns %}
+        <tr class="border-b border-gray-100 {% if b.direction != simpson.aggregate_direction %}bg-orange-50{% endif %}">
+          <td class="px-4 py-3 font-medium">{{ b.source }}</td>
+          <td class="px-4 py-3">{{ "%.1f"|format(b.rate_pre * 100) }}%</td>
+          <td class="px-4 py-3">{{ "%.1f"|format(b.rate_post * 100) }}%</td>
+          <td class="px-4 py-3">
+            {% if b.direction == 'up' %}
+            <span class="text-blue-600">Up</span>
+            {% else %}
+            <span class="text-gray-500">Down</span>
+            {% endif %}
+            {% if b.direction != simpson.aggregate_direction %}
+            <span class="ml-1 text-orange-500 text-xs">(contrary)</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-right text-gray-500">{{ "{:,}".format(b.n_pre) }}</td>
+          <td class="px-4 py-3 text-right text-gray-500">{{ "{:,}".format(b.n_post) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  {% else %}
+  <div class="bg-gray-50 rounded-xl border border-gray-200 px-5 py-8 text-center text-sm text-gray-400">
+    Insufficient data for Simpson's Paradox check. Requires multiple lead sources with pre and post intervention data.
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const matrixData = {{ matrix_json | safe }};
+if (matrixData) {
+  // Build heatmap z-values (reverse rows so newest cohort is at bottom)
+  const z = [...matrixData.conversion_rates].reverse();
+  const y = [...matrixData.cohort_labels].reverse();
+  const sizes = [...matrixData.cohort_sizes].reverse();
+  const x = matrixData.period_offsets.map(i => 'Month ' + i);
+
+  // Build text annotations
+  const text = z.map((row, ri) => row.map((val, ci) => {
+    if (val === null) return '';
+    return (val * 100).toFixed(1) + '%';
+  }));
+
+  // Custom hover text
+  const hovertext = z.map((row, ri) => row.map((val, ci) => {
+    if (val === null) return '';
+    return `${y[ri]}<br>Month ${ci}: ${(val * 100).toFixed(1)}%<br>Cohort size: ${sizes[ri]}`;
+  }));
+
+  const trace = {
+    z: z.map(row => row.map(v => v === null ? NaN : v * 100)),
+    x: x,
+    y: y,
+    type: 'heatmap',
+    colorscale: [
+      [0, '#eff6ff'],
+      [0.2, '#bfdbfe'],
+      [0.4, '#60a5fa'],
+      [0.6, '#2563eb'],
+      [0.8, '#1e3a5f'],
+      [1, '#0f1d30'],
+    ],
+    text: text,
+    texttemplate: '%{text}',
+    textfont: { size: 10 },
+    hovertext: hovertext,
+    hoverinfo: 'text',
+    colorbar: {
+      title: 'Conversion %',
+      ticksuffix: '%',
+      len: 0.5,
+    },
+    zmin: 0,
+    showscale: true,
+  };
+
+  const layout = {
+    margin: { t: 10, b: 40, l: 100, r: 20 },
+    paper_bgcolor: 'transparent',
+    plot_bgcolor: 'transparent',
+    font: { family: 'Inter, sans-serif', size: 11 },
+    xaxis: { title: 'Months since cohort entry', side: 'bottom' },
+    yaxis: { autorange: true },
+  };
+
+  Plotly.newPlot('cohort-heatmap', [trace], layout, { displayModeBar: false, responsive: true });
+}
+</script>
+{% endblock %}

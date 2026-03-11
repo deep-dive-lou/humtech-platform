@@ -41,6 +41,26 @@
       <i data-lucide="filter" class="w-5 h-5 flex-shrink-0"></i>
       Bottleneck
     </a>
+
+    <!-- Causal section -->
+    <div class="border-t border-gray-100 my-3 mx-0"></div>
+    <p class="px-3 text-[10px] uppercase tracking-widest text-gray-400 mb-1">Causal</p>
+
+    <a href="/analytics/causal"
+       class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+              {% if active == 'causal' %}font-semibold{% else %}text-gray-500 hover:text-gray-900 hover:bg-gray-50{% endif %}"
+       {% if active == 'causal' %}style="background-color: {{ bc }}12; color: {{ bc }}"{% endif %}>
+      <i data-lucide="git-branch" class="w-5 h-5 flex-shrink-0"></i>
+      Causal Attribution
+    </a>
+
+    <a href="/analytics/cohort"
+       class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+              {% if active == 'cohort' %}font-semibold{% else %}text-gray-500 hover:text-gray-900 hover:bg-gray-50{% endif %}"
+       {% if active == 'cohort' %}style="background-color: {{ bc }}12; color: {{ bc }}"{% endif %}>
+      <i data-lucide="grid-3x3" class="w-5 h-5 flex-shrink-0"></i>
+      Cohort Analysis
+    </a>
   </nav>
 
   <!-- Footer -->

@@ -1,0 +1,355 @@
+{% extends "_base.html" %}
+{% block title %}Causal Attribution{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <div>
+    <h1 class="text-2xl font-bold">Causal Attribution</h1>
+    <p class="text-sm text-gray-500">{{ tenant }} — ITS, CausalImpact, Doubly Robust</p>
+  </div>
+  <form method="get" class="flex items-center gap-3">
+    <input type="hidden" name="tenant" value="{{ tenant }}">
+    <label class="text-xs text-gray-500 uppercase">Metric</label>
+    <select name="metric" onchange="this.form.submit()"
+            class="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white">
+      {% for m in metrics_options %}
+      <option value="{{ m.key }}" {% if m.key == metric %}selected{% endif %}>{{ m.label }}</option>
+      {% endfor %}
+    </select>
+  </form>
+</div>
+
+<!-- Section 1: Interrupted Time Series -->
+<section class="mb-10">
+  <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
+    <i data-lucide="trending-up" class="w-5 h-5 text-blue-600"></i>
+    Interrupted Time Series
+  </h2>
+  {% if its %}
+  <div class="bg-white rounded-xl border border-gray-200 p-5 mb-4">
+    <div id="its-chart" style="height: 320px;"></div>
+  </div>
+  <div class="grid grid-cols-4 gap-4 mb-3">
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 uppercase">Level Change</p>
+      <p class="text-lg font-bold">{{ "%.4f"|format(its.level_change) }}</p>
+      <p class="text-xs text-gray-400">95% CI: [{{ "%.4f"|format(its.level_change_ci[0]) }}, {{ "%.4f"|format(its.level_change_ci[1]) }}]</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 uppercase">Level p-value</p>
+      <p class="text-lg font-bold {% if its.level_change_p < 0.05 %}text-blue-600{% endif %}">{{ "%.3f"|format(its.level_change_p) }}</p>
+      <p class="text-xs text-gray-400">{% if its.level_change_p < 0.05 %}Significant{% else %}Not significant{% endif %}</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 uppercase">Slope Change</p>
+      <p class="text-lg font-bold">{{ "%.4f"|format(its.slope_change) }}/period</p>
+      <p class="text-xs text-gray-400">p = {{ "%.3f"|format(its.slope_change_p) }}</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 uppercase">R-squared</p>
+      <p class="text-lg font-bold">{{ "%.3f"|format(its.r_squared) }}</p>
+      <p class="text-xs text-gray-400">Model fit</p>
+    </div>
+  </div>
+  <div class="bg-white rounded-xl border border-gray-200 px-5 py-4">
+    <div class="flex items-start gap-2">
+      <i data-lucide="message-circle" class="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0"></i>
+      <p class="text-sm text-gray-700">{{ its.narrative }}</p>
+    </div>
+  </div>
+  {% else %}
+  <div class="bg-gray-50 rounded-xl border border-gray-200 px-5 py-8 text-center text-sm text-gray-400">
+    Insufficient data for ITS analysis (need at least 4 time periods with 2+ pre and 2+ post intervention).
+  </div>
+  {% endif %}
+</section>
+
+<!-- Section 2: Bayesian CausalImpact -->
+<section class="mb-10">
+  <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
+    <i data-lucide="bar-chart-3" class="w-5 h-5 text-blue-600"></i>
+    Bayesian CausalImpact
+  </h2>
+  {% if bsts %}
+  <div class="bg-white rounded-xl border border-gray-200 p-5 mb-4">
+    <div id="bsts-chart" style="height: 320px;"></div>
+  </div>
+  <div class="grid grid-cols-4 gap-4 mb-3">
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 uppercase">Cumulative Effect</p>
+      <p class="text-lg font-bold">{{ "%.4f"|format(bsts.cumulative_effect) }}</p>
+      <p class="text-xs text-gray-400">95% CI: [{{ "%.4f"|format(bsts.cumulative_ci_lower) }}, {{ "%.4f"|format(bsts.cumulative_ci_upper) }}]</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 uppercase">Relative Effect</p>
+      <p class="text-lg font-bold">{{ "%.1f"|format(bsts.relative_effect_pct) }}%</p>
+      <p class="text-xs text-gray-400">vs counterfactual</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 uppercase">P(Causal Effect)</p>
+      <p class="text-lg font-bold text-blue-600">{{ "%.0f"|format(bsts.prob_causal * 100) }}%</p>
+      <p class="text-xs text-gray-400">Posterior probability</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 uppercase">Post-period</p>
+      <p class="text-lg font-bold">{{ bsts.periods|length - bsts.intervention_index }} periods</p>
+      <p class="text-xs text-gray-400">After intervention</p>
+    </div>
+  </div>
+  <div class="bg-white rounded-xl border border-gray-200 px-5 py-4">
+    <div class="flex items-start gap-2">
+      <i data-lucide="message-circle" class="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0"></i>
+      <p class="text-sm text-gray-700">{{ bsts.narrative }}</p>
+    </div>
+  </div>
+  {% else %}
+  <div class="bg-gray-50 rounded-xl border border-gray-200 px-5 py-8 text-center text-sm text-gray-400">
+    Insufficient data or model failed to converge. BSTS requires enough pre-intervention observations to fit a trend model.
+  </div>
+  {% endif %}
+</section>
+
+<!-- Section 3: Doubly Robust Estimator -->
+<section class="mb-10">
+  <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
+    <i data-lucide="shield-check" class="w-5 h-5 text-blue-600"></i>
+    Doubly Robust Estimator (Lead-Level)
+  </h2>
+  {% if dr %}
+  <div class="grid grid-cols-5 gap-4 mb-3">
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 uppercase">ATE</p>
+      <p class="text-lg font-bold">{{ "%.3f"|format(dr.ate) }}</p>
+      <p class="text-xs text-gray-400">Average treatment effect</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 uppercase">95% CI</p>
+      <p class="text-lg font-bold">[{{ "%.3f"|format(dr.ate_ci_lower) }}, {{ "%.3f"|format(dr.ate_ci_upper) }}]</p>
+      <p class="text-xs text-gray-400">Bootstrap</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 uppercase">Treated</p>
+      <p class="text-lg font-bold">{{ "{:,}".format(dr.n_treated) }}</p>
+      <p class="text-xs text-gray-400">{{ "%.1f"|format(dr.treated_outcome_mean * 100) }}% conversion</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 uppercase">Control</p>
+      <p class="text-lg font-bold">{{ "{:,}".format(dr.n_control) }}</p>
+      <p class="text-xs text-gray-400">{{ "%.1f"|format(dr.control_outcome_mean * 100) }}% conversion</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 uppercase">Propensity AUC</p>
+      <p class="text-lg font-bold {% if dr.propensity_auc < 0.55 or dr.propensity_auc > 0.95 %}text-orange-500{% endif %}">{{ "%.2f"|format(dr.propensity_auc) }}</p>
+      <p class="text-xs text-gray-400">Model quality</p>
+    </div>
+  </div>
+  <div class="bg-white rounded-xl border border-gray-200 p-5 mb-3">
+    <div id="dr-chart" style="height: 200px;"></div>
+  </div>
+  <div class="bg-white rounded-xl border border-gray-200 px-5 py-4">
+    <div class="flex items-start gap-2">
+      <i data-lucide="message-circle" class="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0"></i>
+      <p class="text-sm text-gray-700">{{ dr.narrative }}</p>
+    </div>
+  </div>
+  {% else %}
+  <div class="bg-gray-50 rounded-xl border border-gray-200 px-5 py-8 text-center text-sm text-gray-400">
+    Insufficient data for Doubly Robust estimation. Requires at least 30 treated and 30 control leads with closed outcomes.
+    Treatment: first contact within 24 hours of lead creation.
+  </div>
+  {% endif %}
+</section>
+
+<!-- Section 4: Uplift Consensus -->
+<section class="mb-10">
+  <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
+    <i data-lucide="scale" class="w-5 h-5 text-blue-600"></i>
+    Uplift Consensus
+  </h2>
+  {% if uplift and uplift.statements %}
+  <div class="bg-blue-50 border border-blue-200 rounded-xl px-6 py-5 mb-4">
+    <p class="text-base font-semibold text-blue-900">{{ uplift.consensus }}</p>
+  </div>
+  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 border-b border-gray-200">
+        <tr>
+          <th class="text-left px-4 py-3 text-xs uppercase text-gray-500 font-medium">Method</th>
+          <th class="text-left px-4 py-3 text-xs uppercase text-gray-500 font-medium">Uplift</th>
+          <th class="text-left px-4 py-3 text-xs uppercase text-gray-500 font-medium">CI / Probability</th>
+          <th class="text-left px-4 py-3 text-xs uppercase text-gray-500 font-medium">Significant</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in uplift.statements %}
+        <tr class="border-b border-gray-100">
+          <td class="px-4 py-3 font-medium">{{ s.method }}</td>
+          <td class="px-4 py-3">{{ s.uplift }}</td>
+          <td class="px-4 py-3 text-gray-500">{{ s.ci }}{% if s.prob %} &middot; P={{ s.prob }}{% endif %}</td>
+          <td class="px-4 py-3">
+            {% if s.significant %}
+            <span class="inline-flex items-center gap-1 text-blue-600">
+              <i data-lucide="check-circle" class="w-4 h-4"></i> Yes
+            </span>
+            {% else %}
+            <span class="text-gray-400">No</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="bg-gray-50 rounded-xl border border-gray-200 px-5 py-8 text-center text-sm text-gray-400">
+    No causal analysis results available. Ensure metric snapshots and lead data exist for this tenant.
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const BLUE = '#1e3a5f';
+const BLUE_LIGHT = 'rgba(30, 58, 95, 0.15)';
+const ORANGE = 'rgb(234, 88, 12)';
+const LAYOUT_BASE = {
+  margin: { t: 10, b: 35, l: 55, r: 20 },
+  paper_bgcolor: 'transparent',
+  plot_bgcolor: 'transparent',
+  font: { family: 'Inter, sans-serif', size: 11 },
+  xaxis: { showgrid: false },
+  yaxis: { showgrid: true, gridcolor: '#f1f5f9' },
+  showlegend: true,
+  legend: { orientation: 'h', y: -0.15, x: 0.5, xanchor: 'center' },
+  hovermode: 'x unified',
+};
+
+// ITS Chart
+const itsData = {{ its_json | safe }};
+if (itsData) {
+  const traces = [
+    {
+      x: itsData.periods,
+      y: itsData.observed,
+      name: 'Observed',
+      type: 'scatter', mode: 'lines+markers',
+      line: { color: BLUE, width: 2 },
+      marker: { size: 5 },
+    },
+    {
+      x: itsData.periods,
+      y: itsData.counterfactual,
+      name: 'Counterfactual (pre-trend)',
+      type: 'scatter', mode: 'lines',
+      line: { color: '#94a3b8', width: 2, dash: 'dash' },
+    },
+    {
+      x: itsData.periods,
+      y: itsData.predicted,
+      name: 'Fitted',
+      type: 'scatter', mode: 'lines',
+      line: { color: '#2563eb', width: 1.5, dash: 'dot' },
+    },
+  ];
+  const layout = {
+    ...LAYOUT_BASE,
+    shapes: [{
+      type: 'line',
+      x0: itsData.periods[itsData.intervention_index],
+      x1: itsData.periods[itsData.intervention_index],
+      y0: 0, y1: 1, yref: 'paper',
+      line: { color: ORANGE, width: 2, dash: 'dashdot' },
+    }],
+    annotations: [{
+      x: itsData.periods[itsData.intervention_index],
+      y: 1, yref: 'paper',
+      text: 'Intervention',
+      showarrow: false,
+      font: { size: 10, color: ORANGE },
+      yshift: 10,
+    }],
+  };
+  Plotly.newPlot('its-chart', traces, layout, { displayModeBar: false, responsive: true });
+}
+
+// BSTS Chart
+const bstsData = {{ bsts_json | safe }};
+if (bstsData) {
+  const traces = [
+    {
+      x: bstsData.periods,
+      y: bstsData.observed,
+      name: 'Observed',
+      type: 'scatter', mode: 'lines+markers',
+      line: { color: BLUE, width: 2 },
+      marker: { size: 5 },
+    },
+    {
+      x: bstsData.periods,
+      y: bstsData.predicted,
+      name: 'Counterfactual',
+      type: 'scatter', mode: 'lines',
+      line: { color: '#94a3b8', width: 2, dash: 'dash' },
+    },
+    {
+      x: bstsData.periods,
+      y: bstsData.ci_upper,
+      name: '95% CI',
+      type: 'scatter', mode: 'lines',
+      line: { width: 0 }, showlegend: false,
+    },
+    {
+      x: bstsData.periods,
+      y: bstsData.ci_lower,
+      name: '95% CI',
+      type: 'scatter', mode: 'lines',
+      line: { width: 0 },
+      fill: 'tonexty',
+      fillcolor: 'rgba(148, 163, 184, 0.2)',
+    },
+  ];
+  const layout = {
+    ...LAYOUT_BASE,
+    shapes: [{
+      type: 'line',
+      x0: bstsData.periods[bstsData.intervention_index],
+      x1: bstsData.periods[bstsData.intervention_index],
+      y0: 0, y1: 1, yref: 'paper',
+      line: { color: ORANGE, width: 2, dash: 'dashdot' },
+    }],
+    annotations: [{
+      x: bstsData.periods[bstsData.intervention_index],
+      y: 1, yref: 'paper',
+      text: 'Intervention',
+      showarrow: false,
+      font: { size: 10, color: ORANGE },
+      yshift: 10,
+    }],
+  };
+  Plotly.newPlot('bsts-chart', traces, layout, { displayModeBar: false, responsive: true });
+}
+
+// DR Bar Chart
+{% if dr %}
+const drData = {{ dr | tojson | safe }};
+if (drData) {
+  const traces = [{
+    x: ['Treated (< 24h)', 'Control (> 24h)'],
+    y: [drData.treated_outcome_mean * 100, drData.control_outcome_mean * 100],
+    type: 'bar',
+    marker: { color: [BLUE, '#94a3b8'] },
+    text: [(drData.treated_outcome_mean * 100).toFixed(1) + '%', (drData.control_outcome_mean * 100).toFixed(1) + '%'],
+    textposition: 'outside',
+  }];
+  const layout = {
+    ...LAYOUT_BASE,
+    showlegend: false,
+    yaxis: { ...LAYOUT_BASE.yaxis, title: 'Conversion Rate (%)' },
+    margin: { t: 20, b: 40, l: 55, r: 20 },
+  };
+  Plotly.newPlot('dr-chart', traces, layout, { displayModeBar: false, responsive: true });
+}
+{% endif %}
+</script>
+{% endblock %}

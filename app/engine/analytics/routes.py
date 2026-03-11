@@ -1,11 +1,13 @@
 """
 Analytics Command Centre — Routes
 
-Lou's internal analytics UI. Four pages:
-  /analytics/          Dashboard summary (KPIs + CIs + sparklines + narrative)
-  /analytics/control-charts   P-charts + CUSUM + Western Electric anomaly flags
-  /analytics/survival         KM curves + dead deal alerts
-  /analytics/bottleneck       Little's Law throughput + constraint detection
+Lou's internal analytics UI. Six pages:
+  /analytics/              Dashboard summary (KPIs + CIs + sparklines + narrative)
+  /analytics/control-charts P-charts + CUSUM + Western Electric anomaly flags
+  /analytics/survival       KM curves + dead deal alerts
+  /analytics/bottleneck     Little's Law throughput + constraint detection
+  /analytics/causal         ITS + CausalImpact + Doubly Robust + uplift summary
+  /analytics/cohort         Cohort heatmap + Simpson's Paradox check
 """
 
 from __future__ import annotations
@@ -34,6 +36,8 @@ from .stats import choose_ci, format_ci, two_proportion_z_test
 from .anomaly import p_chart, western_electric_rules, cusum
 from .survival import kaplan_meier_per_stage, dead_deal_alerts
 from .bottleneck import stage_throughput
+from .causal import run_its_analysis, run_causal_impact, run_dr_estimator, compute_uplift_summary
+from .cohort import run_cohort_analysis, run_simpsons_check
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -516,3 +520,206 @@ async def bottleneck_page(
         "stages_json": json.dumps(stages_list, default=str),
         "active_page": "bottleneck",
     })
+
+
+# ── Causal Attribution (Layer 3) ─────────────────────────────────────
+
+# Metric options for ITS / CausalImpact (from metric_snapshots JSONB)
+_CAUSAL_METRICS = [
+    {"key": "pipeline_win_rate", "label": "Pipeline Win Rate"},
+    {"key": "competitive_win_rate", "label": "Competitive Win Rate"},
+    {"key": "lead_to_qualified_rate", "label": "Lead to Qualified Rate"},
+    {"key": "qualified_to_booked_rate", "label": "Qualified to Booked Rate"},
+    {"key": "show_rate", "label": "Show Rate"},
+    {"key": "close_rate", "label": "Close Rate"},
+    {"key": "revenue_per_lead_gbp", "label": "Revenue Per Lead (£)"},
+    {"key": "pipeline_velocity_gbp_per_day", "label": "Pipeline Velocity (£/day)"},
+    {"key": "lead_volume_weekly", "label": "Lead Volume (weekly)"},
+]
+
+
+@router.get("/causal", response_class=HTMLResponse)
+async def causal_page(
+    request: Request,
+    tenant: str = Query(default="resg"),
+    period_type: str = Query(default="monthly"),
+    metric: str = Query(default="pipeline_win_rate"),
+    user: dict = Depends(require_analytics),
+    conn: asyncpg.Connection = Depends(_get_conn),
+):
+    empty_ctx = {
+        "request": request, "tenant": tenant, "metric": metric,
+        "metrics_options": _CAUSAL_METRICS,
+        "active_page": "causal",
+        "its": None, "its_json": "null",
+        "bsts": None, "bsts_json": "null",
+        "dr": None, "uplift": None, "error": None,
+    }
+
+    tenant_id = await _resolve_tenant(conn, tenant)
+    if not tenant_id:
+        empty_ctx["error"] = f"Tenant '{tenant}' not found"
+        return _templates.TemplateResponse("causal.html", empty_ctx)
+
+    # Run all three analyses
+    its_result = await run_its_analysis(conn, tenant_id, period_type, metric)
+    bsts_result = await run_causal_impact(conn, tenant_id, period_type, metric)
+    dr_result = await run_dr_estimator(conn, tenant_id)
+    uplift = compute_uplift_summary(its_result, bsts_result, dr_result)
+
+    return _templates.TemplateResponse("causal.html", {
+        "request": request,
+        "error": None,
+        "tenant": tenant,
+        "metric": metric,
+        "metrics_options": _CAUSAL_METRICS,
+        "active_page": "causal",
+        "its": _serialise_its(its_result),
+        "its_json": json.dumps(_serialise_its(its_result), default=str),
+        "bsts": _serialise_bsts(bsts_result),
+        "bsts_json": json.dumps(_serialise_bsts(bsts_result), default=str),
+        "dr": _serialise_dr(dr_result),
+        "uplift": _serialise_uplift(uplift),
+    })
+
+
+def _serialise_its(r) -> dict | None:
+    if r is None:
+        return None
+    return {
+        "periods": r.periods,
+        "observed": r.observed,
+        "predicted": r.predicted,
+        "counterfactual": r.counterfactual,
+        "intervention_index": r.intervention_index,
+        "level_change": r.level_change,
+        "level_change_se": r.level_change_se,
+        "level_change_ci": list(r.level_change_ci),
+        "level_change_p": r.level_change_p,
+        "slope_change": r.slope_change,
+        "slope_change_se": r.slope_change_se,
+        "slope_change_ci": list(r.slope_change_ci),
+        "slope_change_p": r.slope_change_p,
+        "r_squared": r.r_squared,
+        "narrative": r.narrative,
+    }
+
+
+def _serialise_bsts(r) -> dict | None:
+    if r is None:
+        return None
+    return {
+        "periods": r.periods,
+        "observed": r.observed,
+        "predicted": r.predicted,
+        "ci_lower": r.ci_lower,
+        "ci_upper": r.ci_upper,
+        "pointwise_effect": r.pointwise_effect,
+        "cumulative_effect": r.cumulative_effect,
+        "cumulative_ci_lower": r.cumulative_ci_lower,
+        "cumulative_ci_upper": r.cumulative_ci_upper,
+        "relative_effect_pct": r.relative_effect_pct,
+        "prob_causal": r.prob_causal,
+        "intervention_index": r.intervention_index,
+        "narrative": r.narrative,
+    }
+
+
+def _serialise_dr(r) -> dict | None:
+    if r is None:
+        return None
+    return {
+        "ate": r.ate,
+        "ate_se": r.ate_se,
+        "ate_ci_lower": r.ate_ci_lower,
+        "ate_ci_upper": r.ate_ci_upper,
+        "n_treated": r.n_treated,
+        "n_control": r.n_control,
+        "treated_outcome_mean": r.treated_outcome_mean,
+        "control_outcome_mean": r.control_outcome_mean,
+        "propensity_auc": r.propensity_auc,
+        "narrative": r.narrative,
+    }
+
+
+def _serialise_uplift(u) -> dict | None:
+    if u is None:
+        return None
+    return {
+        "statements": u.statements,
+        "consensus": u.consensus,
+    }
+
+
+# ── Cohort Analysis (Layer 3) ────────────────────────────────────────
+
+
+@router.get("/cohort", response_class=HTMLResponse)
+async def cohort_page(
+    request: Request,
+    tenant: str = Query(default="resg"),
+    lookback_months: int = Query(default=24),
+    user: dict = Depends(require_analytics),
+    conn: asyncpg.Connection = Depends(_get_conn),
+):
+    empty_ctx = {
+        "request": request, "tenant": tenant,
+        "lookback_months": lookback_months,
+        "active_page": "cohort",
+        "matrix": None, "matrix_json": "null",
+        "simpson": None, "error": None,
+    }
+
+    tenant_id = await _resolve_tenant(conn, tenant)
+    if not tenant_id:
+        empty_ctx["error"] = f"Tenant '{tenant}' not found"
+        return _templates.TemplateResponse("cohort.html", empty_ctx)
+
+    matrix = await run_cohort_analysis(conn, tenant_id, lookback_months)
+    simpson = await run_simpsons_check(conn, tenant_id, lookback_months)
+
+    return _templates.TemplateResponse("cohort.html", {
+        "request": request,
+        "error": None,
+        "tenant": tenant,
+        "lookback_months": lookback_months,
+        "active_page": "cohort",
+        "matrix": _serialise_matrix(matrix),
+        "matrix_json": json.dumps(_serialise_matrix(matrix), default=str),
+        "simpson": _serialise_simpson(simpson),
+    })
+
+
+def _serialise_matrix(m) -> dict | None:
+    if m is None:
+        return None
+    return {
+        "cohort_labels": m.cohort_labels,
+        "period_offsets": m.period_offsets,
+        "conversion_rates": m.conversion_rates,
+        "cohort_sizes": m.cohort_sizes,
+        "max_offset_per_cohort": m.max_offset_per_cohort,
+    }
+
+
+def _serialise_simpson(s) -> dict | None:
+    if s is None:
+        return None
+    return {
+        "has_paradox": s.has_paradox,
+        "aggregate_rate_pre": s.aggregate_rate_pre,
+        "aggregate_rate_post": s.aggregate_rate_post,
+        "aggregate_direction": s.aggregate_direction,
+        "breakdowns": [
+            {
+                "source": b.source,
+                "rate_pre": b.rate_pre,
+                "rate_post": b.rate_post,
+                "n_pre": b.n_pre,
+                "n_post": b.n_post,
+                "direction": b.direction,
+            }
+            for b in s.breakdowns
+        ],
+        "explanation": s.explanation,
+    }

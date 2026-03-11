@@ -15,3 +15,5 @@ reportlab
 Pillow
 scipy
 numpy
+statsmodels
+pandas

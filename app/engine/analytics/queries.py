@@ -162,3 +162,72 @@ WHERE tenant_id = $1::uuid
   AND occurred_at >= $2::timestamptz
 GROUP BY to_stage;
 """
+
+# ── Causal: lead-level features for Doubly Robust estimator ──────────
+
+DR_LEAD_FEATURES = """
+SELECT
+    l.lead_id,
+    l.source,
+    l.lead_value,
+    l.created_at,
+    CASE WHEN l.won_at IS NOT NULL THEN 1 ELSE 0 END AS outcome,
+    CASE WHEN EXISTS (
+        SELECT 1 FROM engine.lead_events fc
+        WHERE fc.lead_id = l.lead_id
+          AND fc.event_type = 'first_contact'
+          AND fc.occurred_at <= l.created_at + INTERVAL '24 hours'
+    ) THEN 1 ELSE 0 END AS treatment,
+    EXTRACT(DOW FROM l.created_at) AS day_of_week,
+    EXTRACT(HOUR FROM l.created_at) AS hour_of_day,
+    EXTRACT(EPOCH FROM (COALESCE(l.won_at, l.lost_at, now()) - l.created_at)) / 86400.0 AS lifecycle_days
+FROM engine.leads l
+WHERE l.tenant_id = $1::uuid
+  AND l.created_at >= $2::timestamptz
+  AND (l.won_at IS NOT NULL OR l.lost_at IS NOT NULL);
+"""
+
+# ── Cohort: wins grouped by creation month and win month ─────────────
+
+COHORT_OUTCOMES = """
+SELECT
+    DATE_TRUNC('month', l.created_at) AS cohort_month,
+    DATE_TRUNC('month', l.won_at) AS win_month,
+    COUNT(*) AS wins,
+    COALESCE(SUM(l.lead_value), 0) AS revenue
+FROM engine.leads l
+WHERE l.tenant_id = $1::uuid
+  AND l.created_at >= $2::timestamptz
+  AND l.won_at IS NOT NULL
+GROUP BY 1, 2
+ORDER BY 1, 2;
+"""
+
+# ── Cohort: lead counts per creation month ───────────────────────────
+
+COHORT_SIZES = """
+SELECT
+    DATE_TRUNC('month', created_at) AS cohort_month,
+    COUNT(*) AS cohort_size
+FROM engine.leads
+WHERE tenant_id = $1::uuid
+  AND created_at >= $2::timestamptz
+GROUP BY 1
+ORDER BY 1;
+"""
+
+# ── Cohort: win rates by source for Simpson's Paradox detection ──────
+
+COHORT_RATES_BY_SOURCE = """
+SELECT
+    DATE_TRUNC('month', l.created_at) AS cohort_month,
+    COALESCE(l.source, 'unknown') AS source,
+    COUNT(*) AS total,
+    COUNT(*) FILTER (WHERE l.won_at IS NOT NULL) AS wins
+FROM engine.leads l
+WHERE l.tenant_id = $1::uuid
+  AND l.created_at >= $2::timestamptz
+  AND (l.won_at IS NOT NULL OR l.lost_at IS NOT NULL)
+GROUP BY 1, 2
+ORDER BY 1, 2;
+"""
