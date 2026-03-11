@@ -7,6 +7,7 @@ No DB user table — password stored as bcrypt hash in env var.
 
 from __future__ import annotations
 
+import base64
 import bcrypt
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -29,6 +30,9 @@ def verify_password(plain: str) -> bool:
     stored = settings.analytics_password_hash
     if not stored:
         return False
+    # Hash may be base64-encoded to avoid Docker Compose $ interpolation
+    if not stored.startswith("$"):
+        stored = base64.b64decode(stored).decode()
     return bcrypt.checkpw(plain.encode(), stored.encode())
 
 
