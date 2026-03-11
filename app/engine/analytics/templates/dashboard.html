@@ -1,0 +1,110 @@
+{% extends "_base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-8">
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900">Command Centre</h1>
+    <p class="text-sm text-gray-500 mt-1">{{ tenant }} — statistical overview</p>
+  </div>
+  {% if anomaly_count > 0 %}
+  <a href="/analytics/control-charts?tenant={{ tenant }}"
+     class="inline-flex items-center gap-2 px-4 py-2 bg-orange-50 border border-orange-200 text-orange-700 text-sm font-medium rounded-lg hover:bg-orange-100 transition-colors">
+    <i data-lucide="bell-ring" class="w-4 h-4"></i>
+    {{ anomaly_count }} anomal{{ 'y' if anomaly_count == 1 else 'ies' }} detected
+  </a>
+  {% endif %}
+</div>
+
+<!-- KPI Cards -->
+{% if kpis %}
+<div class="grid grid-cols-5 gap-4 mb-8">
+  {% for kpi in kpis %}
+  <div class="bg-white rounded-xl border border-gray-200 p-5">
+    <div class="flex items-center gap-2 mb-3">
+      <i data-lucide="{{ kpi.icon }}" class="w-4 h-4 text-blue-600"></i>
+      <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">{{ kpi.label }}</p>
+    </div>
+    <p class="text-xl font-bold text-gray-900">{{ kpi.value }}</p>
+    {% if kpi.ci %}
+    <p class="text-xs text-gray-400 mt-1">95% CI: {{ kpi.ci }}</p>
+    {% endif %}
+    {% if kpi.sparkline_key %}
+    <div id="spark-{{ loop.index }}" class="mt-3" style="height: 40px;"></div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Narratives -->
+{% if narratives %}
+<div class="space-y-3 mb-8">
+  {% for n in narratives %}
+  <div class="bg-white rounded-xl border border-gray-200 px-5 py-4 flex items-start gap-3">
+    <i data-lucide="{{ n.icon }}" class="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0"></i>
+    <p class="text-sm text-gray-700">{{ n.text }}</p>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Quick links -->
+<div class="grid grid-cols-3 gap-4">
+  <a href="/analytics/control-charts?tenant={{ tenant }}" class="bg-white rounded-xl border border-gray-200 p-5 hover:border-blue-300 transition-colors group">
+    <div class="flex items-center gap-2 mb-2">
+      <i data-lucide="activity" class="w-4 h-4 text-blue-600"></i>
+      <p class="text-sm font-semibold text-gray-900">Control Charts</p>
+    </div>
+    <p class="text-xs text-gray-500">P-charts, CUSUM, and Western Electric anomaly detection for all rate metrics</p>
+  </a>
+  <a href="/analytics/survival?tenant={{ tenant }}" class="bg-white rounded-xl border border-gray-200 p-5 hover:border-blue-300 transition-colors group">
+    <div class="flex items-center gap-2 mb-2">
+      <i data-lucide="clock" class="w-4 h-4 text-blue-600"></i>
+      <p class="text-sm font-semibold text-gray-900">Survival Analysis</p>
+    </div>
+    <p class="text-xs text-gray-500">Kaplan-Meier deal aging curves and statistically dead deal alerts</p>
+  </a>
+  <a href="/analytics/bottleneck?tenant={{ tenant }}" class="bg-white rounded-xl border border-gray-200 p-5 hover:border-blue-300 transition-colors group">
+    <div class="flex items-center gap-2 mb-2">
+      <i data-lucide="filter" class="w-4 h-4 text-blue-600"></i>
+      <p class="text-sm font-semibold text-gray-900">Bottleneck Analysis</p>
+    </div>
+    <p class="text-xs text-gray-500">Little's Law — throughput, dwell time, and pipeline constraint identification</p>
+  </a>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const sparklines = {{ sparklines | safe }};
+const kpis = {{ kpis | tojson | safe }};
+
+// Blue palette for sparklines
+const BLUE = 'rgb(37, 99, 235)';
+const BLUE_LIGHT = 'rgba(37, 99, 235, 0.1)';
+
+kpis.forEach((kpi, idx) => {
+  if (!kpi.sparkline_key || !sparklines[kpi.sparkline_key]) return;
+  const data = sparklines[kpi.sparkline_key];
+  const el = document.getElementById('spark-' + (idx + 1));
+  if (!el || data.length < 2) return;
+
+  Plotly.newPlot(el, [{
+    y: data,
+    type: 'scatter',
+    mode: 'lines',
+    fill: 'tozeroy',
+    line: { color: BLUE, width: 1.5 },
+    fillcolor: BLUE_LIGHT,
+  }], {
+    margin: { t: 0, b: 0, l: 0, r: 0 },
+    xaxis: { visible: false },
+    yaxis: { visible: false },
+    paper_bgcolor: 'transparent',
+    plot_bgcolor: 'transparent',
+    hovermode: false,
+  }, { displayModeBar: false, staticPlot: true });
+});
+</script>
+{% endblock %}

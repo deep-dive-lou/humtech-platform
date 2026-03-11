@@ -1,0 +1,204 @@
+{% extends "_base.html" %}
+{% block title %}Control Charts{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+  <h1 class="text-2xl font-bold text-gray-900">Control Charts</h1>
+  <p class="text-sm text-gray-500 mt-1">P-charts with Western Electric rules + CUSUM trend detection — {{ tenant }}</p>
+</div>
+
+{% if not charts %}
+<div class="text-center py-16 bg-white rounded-xl border border-gray-200">
+  <i data-lucide="activity" class="w-12 h-12 text-gray-300 mx-auto mb-4"></i>
+  <p class="text-gray-500 text-sm">Not enough data points for control charts (need 3+ periods)</p>
+</div>
+{% else %}
+<div class="space-y-8">
+  {% for chart in charts %}
+  <div class="bg-white rounded-xl border border-gray-200 p-6">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h2 class="text-base font-semibold text-gray-900">{{ chart.label }}</h2>
+        <p class="text-xs text-gray-500 mt-0.5">
+          Center: {{ "%.2f" | format(chart.center * 100) }}% —
+          UCL: {{ "%.2f" | format(chart.ucl * 100) }}% —
+          LCL: {{ "%.2f" | format(chart.lcl * 100) }}%
+        </p>
+      </div>
+      {% if chart.violations %}
+      <span class="inline-flex items-center gap-1.5 px-3 py-1 bg-orange-50 border border-orange-200 text-orange-700 text-xs font-medium rounded-full">
+        <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
+        {{ chart.violations | length }} violation{{ 's' if chart.violations | length > 1 else '' }}
+      </span>
+      {% else %}
+      <span class="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-medium rounded-full">
+        <i data-lucide="check" class="w-3.5 h-3.5"></i>
+        In control
+      </span>
+      {% endif %}
+    </div>
+
+    <!-- P-chart -->
+    <div id="pchart-{{ loop.index }}" style="height: 260px;"></div>
+
+    <!-- CUSUM -->
+    <div class="mt-4 pt-4 border-t border-gray-100">
+      <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">CUSUM</p>
+      <div id="cusum-{{ loop.index }}" style="height: 140px;"></div>
+    </div>
+
+    <!-- Violation details -->
+    {% if chart.violations %}
+    <div class="mt-4 pt-4 border-t border-gray-100">
+      <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Violations</p>
+      <div class="space-y-1">
+        {% for v in chart.violations %}
+        <div class="flex items-center gap-2 text-xs text-gray-600">
+          <span class="w-5 h-5 rounded-full bg-orange-100 text-orange-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0">{{ v.rule }}</span>
+          <span>Period {{ v.index + 1 }} ({{ chart.labels[v.index] }}): {{ v.desc }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const chartsData = {{ charts_json | safe }};
+
+// Blue sequential palette
+const BLUE_900 = 'rgb(30, 58, 95)';
+const BLUE_600 = 'rgb(37, 99, 235)';
+const BLUE_400 = 'rgb(96, 165, 250)';
+const BLUE_200 = 'rgb(191, 219, 254)';
+const BLUE_100 = 'rgb(219, 234, 254)';
+const BLUE_50  = 'rgb(239, 246, 255)';
+const ORANGE   = 'rgb(234, 88, 12)';
+
+const layout = {
+  margin: { t: 10, b: 30, l: 50, r: 20 },
+  paper_bgcolor: 'transparent',
+  plot_bgcolor: 'transparent',
+  font: { family: 'Inter, sans-serif', size: 11 },
+  xaxis: { showgrid: false },
+  yaxis: { showgrid: true, gridcolor: '#f1f5f9', tickformat: '.1%' },
+  showlegend: false,
+  hovermode: 'x unified',
+};
+
+const cusumLayout = {
+  margin: { t: 5, b: 25, l: 50, r: 20 },
+  paper_bgcolor: 'transparent',
+  plot_bgcolor: 'transparent',
+  font: { family: 'Inter, sans-serif', size: 10 },
+  xaxis: { showgrid: false },
+  yaxis: { showgrid: true, gridcolor: '#f1f5f9' },
+  showlegend: true,
+  legend: { orientation: 'h', y: -0.3, font: { size: 10 } },
+  hovermode: 'x unified',
+};
+
+chartsData.forEach((chart, idx) => {
+  const n = chart.values.length;
+  const x = chart.labels;
+
+  // Sigma zone shading (filled areas)
+  const traces = [];
+
+  // 3-sigma zone (lightest)
+  traces.push({
+    x: x, y: Array(n).fill(chart.ucl), type: 'scatter', mode: 'lines',
+    line: { width: 0 }, showlegend: false, hoverinfo: 'skip',
+  });
+  traces.push({
+    x: x, y: Array(n).fill(chart.lcl), type: 'scatter', mode: 'lines',
+    line: { width: 0 }, fill: 'tonexty', fillcolor: BLUE_50,
+    showlegend: false, hoverinfo: 'skip',
+  });
+
+  // 2-sigma zone
+  traces.push({
+    x: x, y: Array(n).fill(chart.sigma2_upper), type: 'scatter', mode: 'lines',
+    line: { width: 0 }, showlegend: false, hoverinfo: 'skip',
+  });
+  traces.push({
+    x: x, y: Array(n).fill(chart.sigma2_lower), type: 'scatter', mode: 'lines',
+    line: { width: 0 }, fill: 'tonexty', fillcolor: BLUE_100,
+    showlegend: false, hoverinfo: 'skip',
+  });
+
+  // 1-sigma zone
+  traces.push({
+    x: x, y: Array(n).fill(chart.sigma1_upper), type: 'scatter', mode: 'lines',
+    line: { width: 0 }, showlegend: false, hoverinfo: 'skip',
+  });
+  traces.push({
+    x: x, y: Array(n).fill(chart.sigma1_lower), type: 'scatter', mode: 'lines',
+    line: { width: 0 }, fill: 'tonexty', fillcolor: BLUE_200,
+    showlegend: false, hoverinfo: 'skip',
+  });
+
+  // Center line
+  traces.push({
+    x: x, y: Array(n).fill(chart.center), type: 'scatter', mode: 'lines',
+    line: { color: BLUE_600, width: 1, dash: 'dash' },
+    name: 'Center', hoverinfo: 'skip',
+  });
+
+  // Data line
+  traces.push({
+    x: x, y: chart.values, type: 'scatter', mode: 'lines+markers',
+    line: { color: BLUE_900, width: 2 },
+    marker: { size: 5, color: BLUE_900 },
+    name: chart.label,
+    hovertemplate: '%{y:.2%}<extra></extra>',
+  });
+
+  // Violation markers (orange)
+  if (chart.violations.length > 0) {
+    const vx = chart.violations.map(v => x[v.index]);
+    const vy = chart.violations.map(v => chart.values[v.index]);
+    const vtext = chart.violations.map(v => `Rule ${v.rule}: ${v.desc}`);
+    traces.push({
+      x: vx, y: vy, type: 'scatter', mode: 'markers',
+      marker: { size: 10, color: ORANGE, symbol: 'diamond', line: { color: 'white', width: 1.5 } },
+      name: 'Violations',
+      text: vtext, hovertemplate: '%{y:.2%}<br>%{text}<extra></extra>',
+    });
+  }
+
+  Plotly.newPlot('pchart-' + (idx + 1), traces, layout, { displayModeBar: false });
+
+  // CUSUM chart
+  const cusumTraces = [
+    {
+      x: x, y: chart.cusum_plus, type: 'scatter', mode: 'lines',
+      line: { color: BLUE_600, width: 1.5 }, name: 'CUSUM+',
+      hovertemplate: '%{y:.4f}<extra>CUSUM+</extra>',
+    },
+    {
+      x: x, y: chart.cusum_minus, type: 'scatter', mode: 'lines',
+      line: { color: BLUE_400, width: 1.5 }, name: 'CUSUM-',
+      hovertemplate: '%{y:.4f}<extra>CUSUM-</extra>',
+    },
+  ];
+
+  if (chart.cusum_signals.length > 0) {
+    const sx = chart.cusum_signals.map(i => x[i]);
+    const syPlus = chart.cusum_signals.map(i => chart.cusum_plus[i]);
+    cusumTraces.push({
+      x: sx, y: syPlus, type: 'scatter', mode: 'markers',
+      marker: { size: 8, color: ORANGE, symbol: 'diamond' },
+      name: 'Signal', showlegend: true,
+    });
+  }
+
+  Plotly.newPlot('cusum-' + (idx + 1), cusumTraces, cusumLayout, { displayModeBar: false });
+});
+</script>
+{% endblock %}

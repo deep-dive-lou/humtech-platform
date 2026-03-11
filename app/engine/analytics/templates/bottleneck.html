@@ -1,0 +1,127 @@
+{% extends "_base.html" %}
+{% block title %}Bottleneck Analysis{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+  <h1 class="text-2xl font-bold text-gray-900">Bottleneck Analysis</h1>
+  <p class="text-sm text-gray-500 mt-1">Little's Law — L = &lambda; &times; W — {{ tenant }} (last {{ lookback }} days)</p>
+</div>
+
+{% if not stages %}
+<div class="text-center py-16 bg-white rounded-xl border border-gray-200">
+  <i data-lucide="filter" class="w-12 h-12 text-gray-300 mx-auto mb-4"></i>
+  <p class="text-gray-500 text-sm">No pipeline activity found for this tenant</p>
+</div>
+{% else %}
+
+<!-- Throughput Chart -->
+<div class="bg-white rounded-xl border border-gray-200 p-6 mb-8">
+  <h2 class="text-base font-semibold text-gray-900 mb-1">Throughput by Stage</h2>
+  <p class="text-xs text-gray-500 mb-4">Exits per week. The stage with the lowest throughput is the pipeline constraint.</p>
+  <div id="throughput-chart" style="height: 240px;"></div>
+</div>
+
+<!-- Stage Metrics Table -->
+<div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+  <div class="px-6 py-4 border-b border-gray-200">
+    <h2 class="text-base font-semibold text-gray-900">Stage Metrics</h2>
+  </div>
+  <table class="w-full">
+    <thead class="bg-gray-50 border-b border-gray-200">
+      <tr>
+        <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Stage</th>
+        <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">WIP</th>
+        <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Throughput/wk</th>
+        <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Arrivals/wk</th>
+        <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Median Dwell</th>
+        <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">&rho; (Utilisation)</th>
+        <th class="text-center text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3">Status</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for s in stages %}
+      <tr class="{% if s.is_bottleneck %}bg-blue-50{% elif s.is_unstable %}bg-orange-50{% else %}hover:bg-gray-50{% endif %}">
+        <td class="px-6 py-3">
+          <span class="text-sm font-medium text-gray-900">{{ s.stage }}</span>
+        </td>
+        <td class="px-6 py-3 text-sm text-gray-900 text-right font-mono">{{ s.wip }}</td>
+        <td class="px-6 py-3 text-sm text-gray-900 text-right font-mono">{{ "%.1f" | format(s.throughput_per_week) }}</td>
+        <td class="px-6 py-3 text-sm text-gray-900 text-right font-mono">{{ "%.1f" | format(s.arrival_rate_per_week) }}</td>
+        <td class="px-6 py-3 text-sm text-gray-900 text-right font-mono">
+          {% if s.median_dwell_days is not none %}{{ "%.1f" | format(s.median_dwell_days) }}d{% else %}—{% endif %}
+        </td>
+        <td class="px-6 py-3 text-sm text-right font-mono {% if s.is_unstable %}text-orange-700 font-semibold{% else %}text-gray-900{% endif %}">
+          {% if s.rho is not none %}{{ "%.2f" | format(s.rho) }}{% else %}—{% endif %}
+        </td>
+        <td class="px-6 py-3 text-center">
+          {% if s.is_bottleneck %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
+            <i data-lucide="alert-circle" class="w-3 h-3"></i> Bottleneck
+          </span>
+          {% elif s.is_unstable %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-orange-100 text-orange-700 text-xs font-medium rounded-full">
+            <i data-lucide="alert-triangle" class="w-3 h-3"></i> Unstable
+          </span>
+          {% else %}
+          <span class="text-xs text-gray-400">OK</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Explanation -->
+<div class="mt-6 bg-white rounded-xl border border-gray-200 px-5 py-4">
+  <div class="flex items-start gap-3">
+    <i data-lucide="info" class="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0"></i>
+    <div class="text-xs text-gray-600 space-y-1">
+      <p><strong>WIP</strong> = deals currently in that stage. <strong>Throughput</strong> = deals exiting per week. <strong>&rho;</strong> = arrival rate / departure rate.</p>
+      <p>If &rho; &ge; 1, deals arrive faster than they leave — the stage is <strong>unstable</strong> and will accumulate unboundedly.</p>
+      <p>The <strong>bottleneck</strong> is the stage with lowest throughput. Improving any other stage has zero impact on overall pipeline flow (Theory of Constraints).</p>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const stagesData = {{ stages_json | safe }};
+
+const BLUES = [
+  'rgb(30, 58, 95)', 'rgb(29, 78, 137)', 'rgb(37, 99, 235)',
+  'rgb(59, 130, 246)', 'rgb(96, 165, 250)', 'rgb(147, 197, 253)',
+  'rgb(191, 219, 254)', 'rgb(219, 234, 254)', 'rgb(239, 246, 255)',
+];
+const ORANGE = 'rgb(234, 88, 12)';
+
+const stages = stagesData.map(s => s.stage);
+const throughput = stagesData.map(s => s.throughput_per_week);
+const colors = stagesData.map((s, i) => {
+  if (s.is_bottleneck) return ORANGE;
+  return BLUES[i % BLUES.length];
+});
+
+if (stages.length > 0) {
+  Plotly.newPlot('throughput-chart', [{
+    x: throughput,
+    y: stages,
+    type: 'bar',
+    orientation: 'h',
+    marker: { color: colors },
+    text: throughput.map(v => v.toFixed(1)),
+    textposition: 'outside',
+    hovertemplate: '%{y}: %{x:.1f} exits/week<extra></extra>',
+  }], {
+    margin: { t: 5, b: 30, l: 150, r: 40 },
+    paper_bgcolor: 'transparent',
+    plot_bgcolor: 'transparent',
+    font: { family: 'Inter, sans-serif', size: 11 },
+    xaxis: { title: { text: 'Exits per Week', font: { size: 11 } }, showgrid: true, gridcolor: '#f1f5f9' },
+    yaxis: { autorange: 'reversed' },
+  }, { displayModeBar: false });
+}
+</script>
+{% endblock %}

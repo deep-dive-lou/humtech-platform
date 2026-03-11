@@ -31,6 +31,8 @@ from .portal.staff_routes import router as portal_staff_router
 from .optimiser.routes import router as optimiser_router
 from .optimiser.api import router as optimiser_api_router
 from .optimiser.auth import router as optimiser_auth_router, OptimiserNotAuthenticated
+from .engine.analytics.routes import router as analytics_router
+from .engine.analytics.auth import AnalyticsNotAuthenticated
 from .portal.auth import NotAuthenticated
 
 app = FastAPI(title="HumTech Platform", version="0.2.0")
@@ -49,6 +51,7 @@ app.include_router(portal_staff_router)
 app.include_router(optimiser_auth_router)
 app.include_router(optimiser_router)
 app.include_router(optimiser_api_router)
+app.include_router(analytics_router)
 
 @app.exception_handler(NotAuthenticated)
 async def _portal_auth_handler(request: Request, exc: NotAuthenticated):
@@ -57,6 +60,10 @@ async def _portal_auth_handler(request: Request, exc: NotAuthenticated):
 @app.exception_handler(OptimiserNotAuthenticated)
 async def _optimiser_auth_handler(request: Request, exc: OptimiserNotAuthenticated):
     return RedirectResponse(url="/optimiser/login", status_code=303)
+
+@app.exception_handler(AnalyticsNotAuthenticated)
+async def _analytics_auth_handler(request: Request, exc: AnalyticsNotAuthenticated):
+    return RedirectResponse(url="/analytics/login", status_code=303)
 
 
 async def _send_slack_error(request: Request, status_code: int, detail: str):
