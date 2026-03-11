@@ -26,7 +26,7 @@ from app.outreach.models import (
 logger = logging.getLogger(__name__)
 
 PROMPT_VERSION = "v1.0"
-PERSONALISATION_MODEL = "claude-sonnet-4-6"
+PERSONALISATION_MODEL = "claude-haiku-4-5-20251001"
 ENRICHMENT_MODEL = "claude-haiku-4-5-20251001"
 
 # Fallback defaults (used when campaign.json is missing)
@@ -76,9 +76,21 @@ async def _call_claude_with_retry(client: AsyncAnthropic, max_retries: int = 3, 
     """Call Claude API with exponential backoff on 529 (overloaded) errors."""
     for attempt in range(max_retries):
         try:
-            return await client.messages.create(**kwargs)
+            resp = await client.messages.create(**kwargs)
+            usage = resp.usage
+            logger.info(
+                "Claude API [%s]: %d input + %d output tokens",
+                kwargs.get("model", "unknown"),
+                usage.input_tokens,
+                usage.output_tokens,
+            )
+            return resp
         except Exception as e:
-            if attempt < max_retries - 1 and ("529" in str(e) or "overloaded" in str(e).lower()):
+            err_str = str(e).lower()
+            if "credit balance" in err_str or "billing" in err_str:
+                logger.error("BILLING ERROR — API credits exhausted: %s", e)
+                raise
+            if attempt < max_retries - 1 and ("529" in str(e) or "overloaded" in err_str):
                 wait = 2 ** attempt
                 logger.warning("Claude overloaded, retry %d/%d in %ds", attempt + 1, max_retries, wait)
                 await asyncio.sleep(wait)
@@ -461,7 +473,8 @@ def _check_hiring_signal(
 
 async def _analyse_website(domain: str) -> dict[str, Any]:
     """Fetch company homepage and extract signals using Claude Haiku."""
-    if not domain or not settings.anthropic_api_key:
+    _outreach_key = settings.anthropic_api_key_outreach or settings.anthropic_api_key
+    if not domain or not _outreach_key:
         return {}
 
     url = f"https://{domain}"
@@ -474,7 +487,7 @@ async def _analyse_website(domain: str) -> dict[str, Any]:
         logger.warning("Website fetch failed for %s: %s", domain, e)
         return {}
 
-    client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+    client = AsyncAnthropic(api_key=_outreach_key)
     try:
         msg = await _call_claude_with_retry(
             client,
@@ -520,7 +533,8 @@ async def _generate_personalisation(
     config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run Claude personalisation engine. Returns structured output dict."""
-    client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+    _outreach_key = settings.anthropic_api_key_outreach or settings.anthropic_api_key
+    client = AsyncAnthropic(api_key=_outreach_key)
 
     p_config = (config or {}).get("personalisation", {})
     template_ctx = p_config.get("template_context", TEMPLATE_CONTEXT)

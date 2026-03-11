@@ -15,6 +15,7 @@ class Settings:
     apollo_api_key: str = os.getenv("APOLLO_API_KEY", "")
     apify_api_key: str = os.getenv("APIFY_API_KEY", "")
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
+    anthropic_api_key_outreach: str = os.getenv("ANTHROPIC_API_KEY_OUTREACH", "")
     instantly_api_key: str = os.getenv("INSTANTLY_API_KEY", "")
     instantly_campaign_id: str = os.getenv("INSTANTLY_CAMPAIGN_ID", "")
 
@@ -30,6 +31,10 @@ class Settings:
 
     # Optimisation engine
     optimiser_jwt_secret: str = os.getenv("OPTIMISER_JWT_SECRET", "dev-optimiser-secret-change-in-prod")
+
+    # Analytics command centre
+    analytics_jwt_secret: str = os.getenv("ANALYTICS_JWT_SECRET", "dev-analytics-secret-change-in-prod")
+    analytics_password_hash: str = os.getenv("ANALYTICS_PASSWORD_HASH", "")
 
     # AWS SES (email sending)
     aws_ses_region: str = os.getenv("AWS_SES_REGION", "eu-west-2")
