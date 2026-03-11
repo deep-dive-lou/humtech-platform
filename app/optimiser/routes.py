@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+from decimal import Decimal
 from typing import Optional
 
 import asyncpg
@@ -35,6 +36,17 @@ router = APIRouter(prefix="/optimiser", tags=["optimiser"])
 templates = Jinja2Templates(
     directory=os.path.join(os.path.dirname(__file__), "templates")
 )
+
+
+def _sanitize(obj):
+    """Recursively convert Decimal to float so Jinja tojson works."""
+    if isinstance(obj, Decimal):
+        return float(obj)
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize(i) for i in obj]
+    return obj
 
 
 # ---------------------------------------------------------------------------
@@ -380,15 +392,15 @@ async def experiment_detail(
         "staff": staff,
         "brand": {},
         "exp": exp,
-        "variants": variant_rows,
+        "variants": _sanitize(variant_rows),
         "winner": winner,
         "sequential": sequential_data,
-        "seq_series": seq_series,
-        "daily_data": daily_data,
+        "seq_series": _sanitize(seq_series),
+        "daily_data": _sanitize(daily_data),
         "total_impressions": total_impressions,
         "total_conversions": total_conversions,
-        "taguchi": taguchi_data,
-        "evo": evo_data,
+        "taguchi": _sanitize(taguchi_data),
+        "evo": _sanitize(evo_data),
     })
 
 
