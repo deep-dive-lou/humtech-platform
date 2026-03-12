@@ -174,7 +174,7 @@ async def callback(provider: str, code: str = Query(...), state: str = Query(...
 
     # Store credentials
     encrypted = encrypt_credentials(creds)
-    pool = get_pool()
+    pool = await get_pool()
     async with pool.acquire() as conn:
         # Upsert into core.tenant_credentials
         await conn.execute("""
