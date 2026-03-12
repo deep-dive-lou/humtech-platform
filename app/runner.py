@@ -1,8 +1,9 @@
 """
-Always-on worker runner with three concurrent loops:
+Always-on worker runner with four concurrent loops:
 1) process_loop: claim/process jobs from bot.job_queue
 2) send_loop: send pending outbound messages from bot.messages
-3) monitor_loop: periodic conversation health checks + Slack alerts
+3) briefing_loop: daily morning briefing to Slack (all systems)
+4) reengage_loop: re-engagement follow-ups for stalled conversations
 
 Usage:
   python -m app.runner
@@ -15,14 +16,16 @@ import os
 import random
 import signal
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from app.config import settings
 from app.db import init_db_pool, close_db_pool, get_pool
 from app.bot.jobs import claim_jobs, mark_done, mark_retry
 from app.bot.processor import process_job, process_reengage_job
 from app.bot.sender import send_pending_outbound
-from app.bot.monitor import run_monitor_check
+from app.agents.briefing import run as run_morning_briefing
+from app.agents.slack import SlackReporter
 from app.bot.reengage import check_reengagement
 
 # Logging setup
@@ -42,6 +45,9 @@ SEND_POLL_MAX_MS = int(os.getenv("SEND_POLL_MAX_MS", "1500"))
 # Batch sizes
 PROCESS_BATCH_SIZE = int(os.getenv("PROCESS_BATCH_SIZE", "50"))
 SEND_BATCH_SIZE = int(os.getenv("SEND_BATCH_SIZE", "50"))
+
+# Daily digest config
+DIGEST_HOUR_UK = int(os.getenv("DIGEST_HOUR_UK", "7"))  # 07:00 UK time
 
 # Shutdown flag
 _shutdown_event: asyncio.Event | None = None
@@ -165,33 +171,50 @@ async def send_loop() -> None:
     logger.info("send_loop shutting down")
 
 
-async def monitor_loop() -> None:
-    """Periodically check conversation health and post alerts to Slack."""
+def _seconds_until_next_digest() -> float:
+    """Calculate seconds until the next digest time (DIGEST_HOUR_UK in UK timezone)."""
+    uk_tz = ZoneInfo("Europe/London")
+    now_uk = datetime.now(uk_tz)
+    target = now_uk.replace(hour=DIGEST_HOUR_UK, minute=0, second=0, microsecond=0)
+    if now_uk >= target:
+        target += timedelta(days=1)
+    return (target - now_uk).total_seconds()
+
+
+async def briefing_loop() -> None:
+    """Send the morning briefing to Slack at DIGEST_HOUR_UK (default 07:00 UK)."""
     global _shutdown_event
     assert _shutdown_event is not None
 
     webhook_url = settings.slack_webhook_url
     if not webhook_url:
-        logger.info("monitor_loop skipped: SLACK_WEBHOOK_URL not set")
+        logger.info("briefing_loop skipped: SLACK_WEBHOOK_URL not set")
         return
 
-    interval = settings.monitor_interval_seconds
-    logger.info("monitor_loop started (interval %ds)", interval)
+    slack = SlackReporter(webhook_url)
+    logger.info("briefing_loop started (fires daily at %02d:00 UK time)", DIGEST_HOUR_UK)
 
     while not _shutdown_event.is_set():
+        wait_seconds = _seconds_until_next_digest()
+        logger.info("briefing_loop: next briefing in %.0f seconds (%.1f hours)", wait_seconds, wait_seconds / 3600)
+
+        try:
+            await asyncio.wait_for(_shutdown_event.wait(), timeout=wait_seconds)
+        except asyncio.TimeoutError:
+            pass  # Timer expired — time to send the briefing
+
+        if _shutdown_event.is_set():
+            break
+
         try:
             pool = await get_pool()
             async with pool.acquire() as conn:
-                await run_monitor_check(conn, webhook_url)
+                count = await run_morning_briefing(conn, slack)
+                logger.info("briefing_loop: sent morning briefing (%d conversations)", count)
         except Exception as e:
-            logger.error("monitor_loop error: %s", e)
+            logger.error("briefing_loop error: %s", e)
 
-        try:
-            await asyncio.wait_for(_shutdown_event.wait(), timeout=float(interval))
-        except asyncio.TimeoutError:
-            pass
-
-    logger.info("monitor_loop shutting down")
+    logger.info("briefing_loop shutting down")
 
 
 REENGAGE_CHECK_INTERVAL_SECONDS = int(os.getenv("REENGAGE_CHECK_INTERVAL_SECONDS", "300"))
@@ -236,7 +259,7 @@ def _handle_shutdown(signum, frame) -> None:
 
 
 async def main() -> None:
-    """Main entry point: start both loops and handle shutdown."""
+    """Main entry point: start all loops and handle shutdown."""
     global _shutdown_event
     _shutdown_event = asyncio.Event()
 
@@ -255,7 +278,7 @@ async def main() -> None:
         await asyncio.gather(
             process_loop(),
             send_loop(),
-            monitor_loop(),
+            briefing_loop(),
             reengage_loop(),
         )
     finally:
