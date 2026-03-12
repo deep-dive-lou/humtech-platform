@@ -35,7 +35,7 @@ TOKEN_ENDPOINTS = {
 
 CLIENT_ENV_KEYS = {
     "xero": ("XERO_CLIENT_ID", "XERO_CLIENT_SECRET"),
-    "quickbooks": ("QUICKBOOKS_CLIENT_ID", "QUICKBOOKS_CLIENT_SECRET"),
+    "quickbooks": ("QBO_CLIENT_ID", "QBO_CLIENT_SECRET"),
 }
 
 

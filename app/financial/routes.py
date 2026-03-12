@@ -47,9 +47,9 @@ PROVIDERS = {
         "auth_url": "https://appcenter.intuit.com/connect/oauth2",
         "token_url": "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
         "scopes": "com.intuit.quickbooks.accounting",
-        "client_id_env": "QUICKBOOKS_CLIENT_ID",
-        "client_secret_env": "QUICKBOOKS_CLIENT_SECRET",
-        "redirect_env": "QUICKBOOKS_REDIRECT_URI",
+        "client_id_env": "QBO_CLIENT_ID",
+        "client_secret_env": "QBO_CLIENT_SECRET",
+        "redirect_env": "QBO_REDIRECT_URI",
         "default_redirect": "https://api.humtech.ai/financial/callback/quickbooks",
     },
 }

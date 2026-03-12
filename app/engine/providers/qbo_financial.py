@@ -162,10 +162,10 @@ class QBOFinancialAdapter:
 
         Uses HTTP Basic auth with base64(client_id:client_secret).
         """
-        client_id = os.getenv("QUICKBOOKS_CLIENT_ID")
-        client_secret = os.getenv("QUICKBOOKS_CLIENT_SECRET")
+        client_id = os.getenv("QBO_CLIENT_ID")
+        client_secret = os.getenv("QBO_CLIENT_SECRET")
         if not client_id or not client_secret:
-            raise RuntimeError("QUICKBOOKS_CLIENT_ID and QUICKBOOKS_CLIENT_SECRET must be set")
+            raise RuntimeError("QBO_CLIENT_ID and QBO_CLIENT_SECRET must be set")
 
         credentials_b64 = base64.b64encode(
             f"{client_id}:{client_secret}".encode()

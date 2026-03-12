@@ -27,6 +27,7 @@ from app.bot.sender import send_pending_outbound
 from app.agents.briefing import run as run_morning_briefing
 from app.agents.slack import SlackReporter
 from app.bot.reengage import check_reengagement
+from app.financial.token_refresh import refresh_financial_tokens, CHECK_INTERVAL_SECONDS as TOKEN_REFRESH_INTERVAL_SECONDS
 
 # Logging setup
 logging.basicConfig(
@@ -249,6 +250,31 @@ async def reengage_loop() -> None:
     logger.info("reengage_loop shutting down")
 
 
+async def token_refresh_loop() -> None:
+    """Periodically refresh expiring financial credentials (Xero, QuickBooks)."""
+    global _shutdown_event
+    assert _shutdown_event is not None
+
+    logger.info("token_refresh_loop started (interval %ds)", TOKEN_REFRESH_INTERVAL_SECONDS)
+
+    while not _shutdown_event.is_set():
+        try:
+            pool = await get_pool()
+            await refresh_financial_tokens(pool)
+        except Exception as e:
+            logger.error("token_refresh_loop error: %s", e)
+
+        try:
+            await asyncio.wait_for(
+                _shutdown_event.wait(),
+                timeout=float(TOKEN_REFRESH_INTERVAL_SECONDS),
+            )
+        except asyncio.TimeoutError:
+            pass
+
+    logger.info("token_refresh_loop shutting down")
+
+
 def _handle_shutdown(signum, frame) -> None:
     """Signal handler for graceful shutdown."""
     global _shutdown_event
@@ -280,6 +306,7 @@ async def main() -> None:
             send_loop(),
             briefing_loop(),
             reengage_loop(),
+            token_refresh_loop(),
         )
     finally:
         logger.info("Closing database pool...")
