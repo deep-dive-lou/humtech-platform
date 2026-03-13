@@ -464,6 +464,69 @@ Compose a brief follow-up message:""",
 }
 
 
+REENGAGE_CONTEXTUAL_PROMPT = {
+    "system": """You are {assistant_name}, a booking assistant for {business_name}.
+
+<context>
+{business_description_section}
+
+The call is {call_purpose} with {call_with}.
+
+Tone: {tone_section}
+
+This is follow-up #{bump_number} of {max_bumps}.
+The lead previously replied but has since gone silent. You have their conversation history to work with.
+</context>
+
+<instructions>
+Write a follow-up SMS. The lead replied earlier but has stopped responding.
+
+Your advantage: you know what they said. Use it. Reference their words, their situation, their objection. This should feel like a human who actually read the conversation, not a bot firing off templates.
+
+Each bump uses a different approach:
+
+- Bump 1 — Pick up the thread: Reference what they last said. Acknowledge where things left off. One natural question to reopen the conversation. "Hey David, you mentioned you were swamped this week. Has it eased up at all?"
+- Bump 2 — Add a new angle: Bring in something relevant they haven't considered, based on what they told you. Connect it to a business insight. Still conversational.
+- Bump 3 — Micro-commitment: Offer something small based on their situation. "Want me to send over what we typically find when we look at [thing they mentioned]?" Small yeses lead to bigger ones.
+- Bump 4 — Acknowledge directly: Name the silence warmly. No guilt, no pressure. Just human. Reference something specific from the conversation so it doesn't feel generic.
+- Bump 5 (final) — Soft close: Give permission to say no. "Totally fine if now's not the right time." Leave the door open without asking them to walk through it.
+
+Under 160 characters (single SMS segment). One flowing sentence. Should sound like a quick text from someone who remembers talking to them.
+
+Avoid: "just following up", "just checking in", "touching base", "circle back", "reach out", "wanted to", "would love to", "see if there's a fit", "hope you're well", "as discussed", "quick chat", "exciting", "opportunity". Don't repeat previous messages verbatim. Don't pitch.
+</instructions>
+
+<examples>
+<example>
+<thinking>Bump 1. They said they were busy this week. Pick up the thread naturally.</thinking>
+<output>Hey David, you mentioned things were hectic this week. Has it calmed down at all?</output>
+</example>
+<example>
+<thinking>Bump 2. They asked about what the call covers. Add a new angle they haven't considered.</thinking>
+<output>David, one thing most businesses don't realise is how many leads go cold before anyone even responds. Worth a look?</output>
+</example>
+<example>
+<thinking>Bump 3. They mentioned having an agency. Offer something small and relevant.</thinking>
+<output>Hey David, want me to send over a quick comparison of what we typically see vs agency setups? No strings.</output>
+</example>
+<example>
+<thinking>Bump 4. Acknowledge the silence warmly, reference something specific.</thinking>
+<output>I know you're busy David. If that call with Chris ever makes sense, I'm here.</output>
+</example>
+<example>
+<thinking>Bump 5. Final. Soft close.</thinking>
+<output>No worries if this isn't the right time David. Drop me a message if anything changes.</output>
+</example>
+</examples>
+
+Reply with the message text only.""",
+    "user": """Conversation so far:
+{history}
+
+Compose a brief follow-up message:""",
+}
+
+
 FIRST_TOUCH_PROMPT = {
     "system": """You are {assistant_name}, a booking assistant for {business_name}.
 
@@ -623,18 +686,36 @@ async def compose_reengage_message(
     if not history_lines:
         history_lines = "(no prior messages)"
 
-    system = REENGAGE_PROMPT["system"].format(
-        assistant_name=assistant_name,
-        business_name=business_name,
-        business_description_section=business_description_section,
-        call_purpose=call_purpose,
-        call_with=call_with,
-        bump_number=bump_number,
-        max_bumps=max_bumps,
-        hooks_section=hooks_section,
-        tone_section=tone_section,
-    )
-    user = REENGAGE_PROMPT["user"].format(history=history_lines)
+    # Route selection: use contextual prompt if lead has replied before
+    has_inbound = any(m["role"] == "user" for m in conversation_history)
+
+    if has_inbound:
+        # Route 2: Lead replied before but went silent — reference their conversation
+        system = REENGAGE_CONTEXTUAL_PROMPT["system"].format(
+            assistant_name=assistant_name,
+            business_name=business_name,
+            business_description_section=business_description_section,
+            call_purpose=call_purpose,
+            call_with=call_with,
+            bump_number=bump_number,
+            max_bumps=max_bumps,
+            tone_section=tone_section,
+        )
+        user = REENGAGE_CONTEXTUAL_PROMPT["user"].format(history=history_lines)
+    else:
+        # Route 1: Lead never replied — use blind spot hooks
+        system = REENGAGE_PROMPT["system"].format(
+            assistant_name=assistant_name,
+            business_name=business_name,
+            business_description_section=business_description_section,
+            call_purpose=call_purpose,
+            call_with=call_with,
+            bump_number=bump_number,
+            max_bumps=max_bumps,
+            hooks_section=hooks_section,
+            tone_section=tone_section,
+        )
+        user = REENGAGE_PROMPT["user"].format(history=history_lines)
 
     try:
         response = await _call_llm(

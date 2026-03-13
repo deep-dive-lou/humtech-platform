@@ -124,28 +124,100 @@ def build_process_message_prompt(history: list[dict], last_message: str) -> tupl
     return system, user
 
 
+REENGAGE_CONTEXTUAL = """You are {assistant_name}, a booking assistant for {business_name}.
+
+<context>
+{business_description_section}
+
+The call is {call_purpose} with {call_with}.
+
+Tone: {tone_section}
+
+This is follow-up #{bump_number} of {max_bumps}.
+The lead previously replied but has since gone silent. You have their conversation history to work with.
+</context>
+
+<instructions>
+Write a follow-up SMS. The lead replied earlier but has stopped responding.
+
+Your advantage: you know what they said. Use it. Reference their words, their situation, their objection. This should feel like a human who actually read the conversation, not a bot firing off templates.
+
+Each bump uses a different approach:
+
+- Bump 1 — Pick up the thread: Reference what they last said. Acknowledge where things left off. One natural question to reopen the conversation. "Hey David, you mentioned you were swamped this week. Has it eased up at all?"
+- Bump 2 — Add a new angle: Bring in something relevant they haven't considered, based on what they told you. Connect it to a business insight. Still conversational.
+- Bump 3 — Micro-commitment: Offer something small based on their situation. "Want me to send over what we typically find when we look at [thing they mentioned]?" Small yeses lead to bigger ones.
+- Bump 4 — Acknowledge directly: Name the silence warmly. No guilt, no pressure. Just human. Reference something specific from the conversation so it doesn't feel generic.
+- Bump 5 (final) — Soft close: Give permission to say no. "Totally fine if now's not the right time." Leave the door open without asking them to walk through it.
+
+Under 160 characters (single SMS segment). One flowing sentence. Should sound like a quick text from someone who remembers talking to them.
+
+Avoid: "just following up", "just checking in", "touching base", "circle back", "reach out", "wanted to", "would love to", "see if there's a fit", "hope you're well", "as discussed", "quick chat", "exciting", "opportunity". Don't repeat previous messages verbatim. Don't pitch.
+</instructions>
+
+<examples>
+<example>
+<thinking>Bump 1. They said they were busy this week. Pick up the thread naturally.</thinking>
+<output>Hey David, you mentioned things were hectic this week. Has it calmed down at all?</output>
+</example>
+<example>
+<thinking>Bump 2. They asked about what the call covers. Add a new angle they haven't considered.</thinking>
+<output>David, one thing most businesses don't realise is how many leads go cold before anyone even responds. Worth a look?</output>
+</example>
+<example>
+<thinking>Bump 3. They mentioned having an agency. Offer something small and relevant.</thinking>
+<output>Hey David, want me to send over a quick comparison of what we typically see vs agency setups? No strings.</output>
+</example>
+<example>
+<thinking>Bump 4. Acknowledge the silence warmly, reference something specific.</thinking>
+<output>I know you're busy David. If that call with Chris ever makes sense, I'm here.</output>
+</example>
+<example>
+<thinking>Bump 5. Final. Soft close.</thinking>
+<output>No worries if this isn't the right time David. Drop me a message if anything changes.</output>
+</example>
+</examples>
+
+Reply with the message text only."""
+
+
 def build_reengage_prompt(history: list[dict], bump: int) -> tuple[str, str]:
     bs = BOT_SETTINGS
     biz_desc = f"{bs['business_name']} is {bs['business_description']}."
     hooks_section = "\n".join(f"- {h}" for h in bs["hooks"])
+    max_bumps = 5
 
     history_lines = "\n".join(
         f"{'Lead' if m['role'] == 'user' else 'You'}: {m['text']}"
         for m in history
     )
 
-    system = REENGAGE_V3.format(
-        assistant_name=bs["assistant_name"],
-        business_name=bs["business_name"],
-        business_description_section=biz_desc,
-        call_purpose=bs["call_purpose"],
-        call_with=bs["call_with"],
-        tone_section=bs["tone"],
-        hooks_section=hooks_section,
-        first_message=history_lines.split("\n")[0] if history_lines else "",
-    )
-    # Replace {bump} placeholder (double-braced in template)
-    system = system.replace("{bump}", str(bump))
+    # Route selection: contextual if lead has replied, hooks if never replied
+    has_inbound = any(m["role"] == "user" for m in history)
+
+    if has_inbound:
+        system = REENGAGE_CONTEXTUAL.format(
+            assistant_name=bs["assistant_name"],
+            business_name=bs["business_name"],
+            business_description_section=biz_desc,
+            call_purpose=bs["call_purpose"],
+            call_with=bs["call_with"],
+            tone_section=bs["tone"],
+            bump_number=bump,
+            max_bumps=max_bumps,
+        )
+    else:
+        system = REENGAGE_V3.format(
+            assistant_name=bs["assistant_name"],
+            business_name=bs["business_name"],
+            business_description_section=biz_desc,
+            call_purpose=bs["call_purpose"],
+            call_with=bs["call_with"],
+            tone_section=bs["tone"],
+            hooks_section=hooks_section,
+            first_message=history_lines.split("\n")[0] if history_lines else "",
+        )
+        system = system.replace("{bump}", str(bump))
 
     user = f"Conversation so far:\n{history_lines}\n\nCompose a brief follow-up message:"
     return system, user
@@ -311,6 +383,41 @@ async def main():
         [
             "Sounds interesting but I'm swamped this week",
             "Could we do next Wednesday around 3?",
+        ],
+    )
+
+    # Scenario 9: Route 2 — Lead replies then goes silent (contextual re-engage)
+    await simulate_conversation(
+        "Route 2 — replied then silent (busy objection)",
+        "Hannah",
+        [
+            "Sounds interesting but I'm really busy right now",
+            "[SILENCE]",  # bump 1 — should reference being busy
+            "[SILENCE]",  # bump 2 — new angle based on their situation
+            "[SILENCE]",  # bump 3 — micro-commitment
+        ],
+    )
+
+    # Scenario 10: Route 2 — Lead asked a question then went silent
+    await simulate_conversation(
+        "Route 2 — asked question then silent",
+        "Alex",
+        [
+            "What would we actually talk about on the call?",
+            "[SILENCE]",  # bump 1 — should pick up from their question
+            "[SILENCE]",  # bump 2 — add new angle
+        ],
+    )
+
+    # Scenario 11: Route 2 — Lead had agency objection then went silent
+    await simulate_conversation(
+        "Route 2 — agency objection then silent",
+        "Mark",
+        [
+            "I've already got an agency doing this",
+            "[SILENCE]",  # bump 1 — reference the agency comment
+            "[SILENCE]",  # bump 2
+            "[SILENCE]",  # bump 3 — micro-commitment
         ],
     )
 

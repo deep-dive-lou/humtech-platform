@@ -32,11 +32,6 @@ WHERE c.status = 'open'
   AND c.last_outbound_at > c.last_inbound_at
   AND c.context->>'declined' IS NULL
   AND c.context->>'booked_booking' IS NULL
-  AND EXISTS (
-    SELECT 1 FROM bot.messages m
-    WHERE m.conversation_id = c.conversation_id
-      AND m.direction = 'inbound'
-  )
   AND NOT EXISTS (
     SELECT 1 FROM bot.job_queue jq
     WHERE jq.conversation_id = c.conversation_id
