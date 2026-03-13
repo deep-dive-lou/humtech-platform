@@ -152,7 +152,7 @@ def list_campaigns() -> list[str]:
 async def _search_target_orgs(
     config: dict[str, Any] | None = None,
     target_orgs: int = 200,
-) -> list[str]:
+) -> tuple[list[str], int]:
     """Step 1: Find target org domains via Apollo Organization Search.
 
     Uses q_organization_keyword_tags, organization_locations etc. which
@@ -163,15 +163,15 @@ async def _search_target_orgs(
     Stops once target_orgs domains are collected or the full result set is
     exhausted.
 
-    Returns list of primary_domain strings.
+    Returns (list of primary_domain strings, total_entries from Apollo).
     """
     if not settings.apollo_api_key:
-        return []
+        return [], 0
 
     os_config = (config or {}).get("apollo", {}).get("organization_search", {})
     if not os_config:
         logger.warning("No apollo.organization_search config -- skipping org search")
-        return []
+        return [], 0
 
     logger.info("Apollo org search filters: %s", {k: v for k, v in os_config.items()})
 
@@ -196,7 +196,7 @@ async def _search_target_orgs(
     )
 
     if total_pages == 0:
-        return []
+        return [], total_entries
 
     # Pick a random start page so each run samples different orgs
     start_page = random.randint(1, total_pages)
@@ -239,7 +239,7 @@ async def _search_target_orgs(
         "Apollo org search: collected %d org domains (fetched %d pages, started at page %d)",
         len(domains), pages_fetched, start_page,
     )
-    return domains
+    return domains, total_entries
 
 
 async def source_leads(
@@ -637,7 +637,7 @@ async def run_pipeline(batch_date: Optional[date] = None, campaign: Optional[str
     # Over-source by 50% to compensate for no-email + dedup losses
     lead_limit = int(lead_target * 1.5)
 
-    stats = {
+    stats: dict[str, Any] = {
         "batch_date": today.isoformat(),
         "campaign": config.get("campaign_name", "default"),
         "sourced": 0,
@@ -647,10 +647,14 @@ async def run_pipeline(batch_date: Optional[date] = None, campaign: Optional[str
         "auto_send": 0,
         "needs_review": 0,
         "errors": 0,
+        "pool_total": 0,
+        "pool_contacted": 0,
+        "pool_remaining": 0,
     }
 
     # Step 1: Find target orgs by keyword (debt management etc.)
-    org_domains = await _search_target_orgs(config)
+    org_domains, pool_total = await _search_target_orgs(config)
+    stats["pool_total"] = pool_total
     if not org_domains:
         logger.warning("Pipeline: no target orgs found — check campaign.json organization_search config")
         return stats
@@ -784,6 +788,52 @@ async def run_pipeline(batch_date: Optional[date] = None, campaign: Optional[str
 
         # Pace API calls to avoid Claude rate limits
         await asyncio.sleep(1)
+
+    # --- Pool monitoring ---
+    campaign_name = config.get("campaign_name", "default")
+    async with pool.acquire() as conn:
+        row = await conn.fetchval(
+            "SELECT COUNT(DISTINCT company_domain) FROM outreach.leads "
+            "WHERE campaign_name = $1 AND company_domain IS NOT NULL AND company_domain != ''",
+            campaign_name,
+        )
+    pool_contacted = row or 0
+    pool_remaining = max(pool_total - pool_contacted, 0)
+    stats["pool_contacted"] = pool_contacted
+    stats["pool_remaining"] = pool_remaining
+
+    logger.info(
+        "Pool monitor [%s]: total=%d, contacted=%d, remaining=%d",
+        campaign_name, pool_total, pool_contacted, pool_remaining,
+    )
+
+    # Slack alerts for pool exhaustion
+    dupe_pct = (stats["skipped_duplicate"] / stats["sourced"] * 100) if stats["sourced"] else 0
+    alert_msg = None
+
+    if pool_remaining < 50 or dupe_pct > 70:
+        alert_msg = (
+            ":rotating_light: *Pool exhausted -- {name}*\n"
+            "Remaining: {rem} orgs (total: {tot}, contacted: {con})\n"
+            "Duplicates this run: {dup}/{src} ({pct:.0f}%)\n"
+            "Consider launching a new sector or widening keywords."
+        ).format(name=campaign_name, rem=pool_remaining, tot=pool_total,
+                 con=pool_contacted, dup=stats["skipped_duplicate"],
+                 src=stats["sourced"], pct=dupe_pct)
+    elif pool_remaining < 200:
+        alert_msg = (
+            ":warning: *Pool running low -- {name}*\n"
+            "Remaining: {rem} orgs (total: {tot}, contacted: {con})\n"
+            "Start planning the next sector."
+        ).format(name=campaign_name, rem=pool_remaining, tot=pool_total,
+                 con=pool_contacted)
+
+    if alert_msg:
+        logger.warning(alert_msg)
+        if settings.slack_webhook_url:
+            from app.agents.slack import SlackReporter
+            slack = SlackReporter(settings.slack_webhook_url)
+            await slack.post(alert_msg)
 
     logger.info("Pipeline complete: %s", stats)
     return stats
