@@ -255,6 +255,8 @@ def get_bot_settings(tenant: dict[str, Any]) -> dict[str, Any]:
             "booking_confirmation_template",
             "You're confirmed for {day} {date} {month} at {time}. See you then!",
         ),
+        "hooks": bot.get("hooks", []),
+        "key_pain_points": bot.get("key_pain_points", []),
     }
 
 
