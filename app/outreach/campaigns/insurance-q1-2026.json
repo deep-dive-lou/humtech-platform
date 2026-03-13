@@ -1,0 +1,34 @@
+{
+  "campaign_name": "insurance-q1-2026",
+  "instantly_campaign_id": "6efbfaac-fbe1-4f8c-992f-4a4f0b3c218e",
+  "apollo": {
+    "person_titles": [
+      "CEO", "MD", "Managing Director", "Founder", "Co-Founder",
+      "COO", "Commercial Director", "Head of Sales", "Sales Director",
+      "VP Sales", "Director of Sales", "Account Director", "Branch Manager"
+    ],
+    "person_seniorities": ["owner", "founder", "c_suite", "vp", "director"],
+    "organization_search": {
+      "q_organization_keyword_tags": [
+        "insurance broker", "commercial insurance", "business insurance",
+        "insurance brokerage", "general insurance", "insurance intermediary",
+        "liability insurance", "professional indemnity", "insurance advisory",
+        "risk management"
+      ],
+      "organization_locations": ["United Kingdom"],
+      "organization_num_employees_ranges": ["5,500"]
+    }
+  },
+  "personalisation": {
+    "template_context": "HumTech offers a done-for-you AI Revenue Engine for insurance brokerages — AI booking bot that converts quote requests into booked consultations, speed-to-lead automation so no enquiry goes cold (critical in insurance where the first broker to respond wins the policy), sales process improvement for account executives, and full ad management. They only get paid when revenue goes up.",
+    "sector_hints": {
+      "type_of_company": "insurance brokerages",
+      "ref_service": "commercial and personal insurance policies",
+      "reference_outcome": "converting quote requests into bound policies",
+      "industry_name": "insurance brokerage"
+    }
+  },
+  "limits": {
+    "leads_per_run": 40
+  }
+}
