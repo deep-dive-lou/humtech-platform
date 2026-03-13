@@ -16,10 +16,10 @@ SLUGS=$(docker exec "$CONTAINER" python -c "
 import asyncio, os, asyncpg
 async def get_slugs():
     conn = await asyncpg.connect(os.environ['DATABASE_URL'])
-    rows = await conn.fetch('SELECT slug FROM core.tenants WHERE is_active = TRUE')
+    rows = await conn.fetch('SELECT tenant_slug FROM core.tenants WHERE is_active = TRUE')
     await conn.close()
     for r in rows:
-        print(r[\"slug\"])
+        print(r['tenant_slug'])
 asyncio.run(get_slugs())
 " 2>>"$LOG_FILE")
 
